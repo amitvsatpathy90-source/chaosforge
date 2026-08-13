@@ -1,0 +1,151 @@
+{
+  "uid": "chaosforge-slis",
+  "title": "ChaosForge — SLIs",
+  "tags": ["chaosforge"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Outbox lag — oldest pending age (CP)",
+      "description": "Primary outbox SLI (architecture specifications). Alert when this climbs — the relay is stalled.",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "outbox_oldest_pending_age_seconds{job=\"control-plane\"}", "legendFormat": "oldest pending age" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Outbox depth — pending vs DEAD (CP)",
+      "description": "outbox.dead_count > 0 = poison rows quarantined after max attempts (ADR-0528). Alert.",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "outbox_pending_count{job=\"control-plane\"}", "legendFormat": "pending" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "outbox_dead_count{job=\"control-plane\"}", "legendFormat": "DEAD" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "CAS 409 conflict rate",
+      "description": "replay.conflict = CAS 0-row + lock_timeout contention (ADR-0528).",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "sum(rate(replay_conflict_total{job=\"control-plane\"}[5m]))", "legendFormat": "conflict/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Replay outcomes (CP)",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "rate(replay_claimed_total{job=\"control-plane\"}[5m])", "legendFormat": "claimed" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "rate(replay_conflict_total{job=\"control-plane\"}[5m])", "legendFormat": "conflict" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "rate(replay_idempotent_hit_total{job=\"control-plane\"}[5m])", "legendFormat": "idempotent hit" },
+        { "refId": "D", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "rate(replay_notfound_total{job=\"control-plane\"}[5m])", "legendFormat": "notfound (enum SLI)" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Scenario execution outcomes (Exec)",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "sum by (outcome) (rate(chaosforge_scenario_execution_total{job=\"execution-service\"}[5m]))",
+          "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "DLQ routed by reason (Exec)",
+      "description": "Hard-poison reasons (SCHEMA_INVALID/FENCING_VIOLATION/STEP_FAILED) vs replayable (INFRA_TRANSIENT/STEP_TIMEOUT).",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "sum by (dlq_reason) (rate(chaosforge_dlq_routed_total{job=\"execution-service\"}[5m]))",
+          "legendFormat": "{{dlq_reason}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Inbox dedup suppressed (Exec)",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "rate(inbox_duplicates_suppressed_total{job=\"execution-service\"}[5m])", "legendFormat": "duplicates/s" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "AI authoring by outcome (CP)",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "sum by (outcome) (rate(chaosforge_ai_authoring_requests_total{job=\"control-plane\"}[5m]))",
+          "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Kafka command consumer lag (Exec)",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "max(kafka_consumer_fetch_manager_records_lag_max{job=\"execution-service\"})", "legendFormat": "max lag" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "HTTP P99 latency by service",
+      "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le, job) (rate(http_server_requests_seconds_bucket[5m])))",
+          "legendFormat": "{{job}}" }
+      ]
+    }
+  ]
+}

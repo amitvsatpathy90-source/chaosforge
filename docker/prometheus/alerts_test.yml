@@ -1,0 +1,206 @@
+# promtool unit tests for SecurityPostureNotHardened (arch-audit F2), DlqTriageBacklog (ADR-0542)
+# and DlqDepthPollFailing (the frozen-gauge meta-alert mirrored from RPE's Bundle-1 fix).
+#
+# Why this file exists: the rule is INERT in the lab by construction (the lab stamps env=lab and is
+# unhardened by design), so a running lab Prometheus can never demonstrate that it fires. Without these
+# tests the fail-closed claim — "a Prometheus with no env label still alerts" — would be an assertion, not
+# a proof. `promtool check rules` only proves the file parses.
+#
+# Run:  docker run --rm -v "$PWD/docker/prometheus":/cfg:ro --entrypoint promtool \
+#         prom/prometheus:latest test rules /cfg/alerts_test.yml
+#
+# NOTE: not wired into `./gradlew check` — it needs a promtool binary/container, so it is a manual gate.
+
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 1. The lab: unhardened BY DESIGN and stamped env=lab. Must NOT fire, or the alert is permanent noise.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="control-plane",env="lab"}'
+        values: "0+0x10"
+      - series: 'chaosforge_security_hardened{job="execution-service",env="lab"}'
+        values: "0+0x10"
+      - series: 'chaosforge_security_hardened{job="edge-gateway",env="lab"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SecurityPostureNotHardened
+        exp_alerts: []
+
+  # 2. THE FAIL-CLOSED CASE. A deployed Prometheus written without an `env` label: PromQL treats the
+  #    absent label as "", and "" != "lab", so the rule still matches and pages. This is the property the
+  #    whole design rests on — a new deployment that forgets everything still alerts.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="control-plane"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SecurityPostureNotHardened
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: control-plane
+            exp_annotations:
+              summary: "control-plane is running on LAB security posture outside the lab"
+              description: >-
+                A non-lab instance reports chaosforge_security_hardened=0: at least one control (mTLS,
+                client-auth=need, /internal CN scoping, client cert to the CP over https, or the SSRF
+                allowlist) is OFF, and it started anyway because chaosforge.deployment was not set to
+                'deployed'. The startup WARN on that instance names exactly which controls are missing.
+              runbook: docs/runbooks/security-posture.md
+
+  # 3. An explicitly-labelled non-lab environment, unhardened. Fires.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="execution-service",env="prod"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SecurityPostureNotHardened
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: execution-service
+            exp_annotations:
+              summary: "execution-service is running on LAB security posture outside the lab"
+              description: >-
+                A non-lab instance reports chaosforge_security_hardened=0: at least one control (mTLS,
+                client-auth=need, /internal CN scoping, client cert to the CP over https, or the SSRF
+                allowlist) is OFF, and it started anyway because chaosforge.deployment was not set to
+                'deployed'. The startup WARN on that instance names exactly which controls are missing.
+              runbook: docs/runbooks/security-posture.md
+
+  # 4. A correctly hardened deployment. Must NOT fire.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="control-plane",env="prod"}'
+        values: "1+0x10"
+      - series: 'chaosforge_security_hardened{job="execution-service",env="prod"}'
+        values: "1+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SecurityPostureNotHardened
+        exp_alerts: []
+
+  # 5. Partial rollout: CP hardened, exec not. The unhardened one must still page on its own — `max by
+  #    (job)` must not let a healthy sibling mask it.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="control-plane",env="prod"}'
+        values: "1+0x10"
+      - series: 'chaosforge_security_hardened{job="execution-service",env="prod"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SecurityPostureNotHardened
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: execution-service
+            exp_annotations:
+              summary: "execution-service is running on LAB security posture outside the lab"
+              description: >-
+                A non-lab instance reports chaosforge_security_hardened=0: at least one control (mTLS,
+                client-auth=need, /internal CN scoping, client cert to the CP over https, or the SSRF
+                allowlist) is OFF, and it started anyway because chaosforge.deployment was not set to
+                'deployed'. The startup WARN on that instance names exactly which controls are missing.
+              runbook: docs/runbooks/security-posture.md
+
+  # 6. The `for: 5m` guard — a fresh unhardened instance must not page instantly (rolling-deploy blip).
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_security_hardened{job="edge-gateway",env="prod"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SecurityPostureNotHardened
+        exp_alerts: []
+
+  # 7. DlqTriageBacklog (ADR-0542): depth > 0 sustained past `for: 1h` fires, split per (topic, partition).
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_untriaged_depth{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ",partition="0"}'
+        values: "4+0x70"
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: DlqTriageBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              topic: chaosforge.scenario.commands.v1.DLQ
+              partition: "0"
+            exp_annotations:
+              summary: "DLQ triage backlog on chaosforge.scenario.commands.v1.DLQ partition 0"
+              description: >-
+                Records have sat past the human-review watermark for over an hour. Triage them and advance
+                the watermark with PUT /v1/dlq/{topic}/reviewed to clear this; the gauge trusts that an
+                operator reviewed, it does not verify disposition.
+              runbook: docs/runbooks/dlq-and-outbox.md
+
+  # 8. Backlog younger than `for: 1h` — still pending, must NOT fire (a blip that gets triaged shouldn't page).
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_untriaged_depth{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ",partition="0"}'
+        values: "4+0x70"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: DlqTriageBacklog
+        exp_alerts: []
+
+  # 9. Fully triaged (depth 0) — never fires.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_untriaged_depth{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ",partition="0"}'
+        values: "0+0x70"
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: DlqTriageBacklog
+        exp_alerts: []
+
+  # 10. DlqDepthPollFailing: sustained poll failures (every 30s-cadence poll failing ≈ +2/min; the
+  #     +1/min here is already far past the >5-in-10m threshold) fire per topic after `for: 5m`.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_depth_poll_failures_total{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DlqDepthPollFailing
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              topic: chaosforge.scenario.commands.v1.DLQ
+            exp_annotations:
+              summary: "DLQ depth poll failing on chaosforge.scenario.commands.v1.DLQ — triage-backlog signal is blind"
+              description: >-
+                chaosforge.dlq.untriaged_depth has not refreshed for this topic (frozen at its last
+                value; a low reading does NOT mean the DLQ is clear). Fix the poll — broker
+                reachability from the CP is the first suspect — before trusting DlqTriageBacklog.
+              runbook: docs/runbooks/dlq-and-outbox.md
+
+  # 11. A brief blip (two failed polls, then healthy) never crosses >5 in any 10m window — must NOT
+  #     fire; one transient broker hiccup is the log WARN's job, not a ticket.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_depth_poll_failures_total{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ"}'
+        values: "0 1 2 2+0x28"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DlqDepthPollFailing
+        exp_alerts: []
+
+  # 12. Healthy poller — counter registered at boot and flat at 0 (the constructor pre-registers it,
+  #     so this series genuinely exists on a healthy CP). Never fires.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_dlq_depth_poll_failures_total{job="control-plane",topic="chaosforge.scenario.commands.v1.DLQ"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DlqDepthPollFailing
+        exp_alerts: []

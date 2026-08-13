@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "ScenarioRunResult",
+  "namespace": "io.chaosforge.schema.v1",
+  "fields": [
+    { "name": "scenarioId",    "type": "string" },
+    { "name": "tenantId",      "type": "string" },
+    { "name": "replayVersion", "type": "long" },
+    { "name": "outcome",       "type": "string" },
+    { "name": "finishedAt",    "type": { "type": "long", "logicalType": "timestamp-millis" } }
+  ]
+}

@@ -1,0 +1,197 @@
+# ChaosForge local lab topology. Pinned tags, healthchecks, mem_limit on every service.
+# Total mem_limit budget ≈ 1912 MB (< 2 GB cap, per build-prompt).
+#   postgres 256 + redpanda 600 + apicurio 384 + redis 128 + prometheus 256 + grafana 256
+# Ollama is INTENTIONALLY excluded from the 2 GB budget — it alone exceeds it. Run it host-local,
+# or opt in with `--profile ai` (see the commented service at the bottom). The AI path is the last
+# build step and is not required for the Gateway→CP→Kafka→Exec E2E hard cut.
+#
+# RF=1 lab topology; acks=all confirms the sole leader only (Known Limitations).
+
+name: chaosforge
+
+networks:
+  chaosforge-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redpanda-data:
+  prometheus-data:
+  grafana-data:
+  # service "ollama" refers to volume ollama-data:
+  ollama-data:
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: chaosforge-postgres
+    environment:
+      POSTGRES_USER: chaosforge
+      # Same variable name the services read (application.yml ${DB_PASSWORD:chaosforge}) so one .env
+      # entry keeps server and clients in agreement. Compose reads .env automatically; see .env.example.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chaosforge}
+      POSTGRES_DB: chaosforge           # bootstrap db; init script creates chaosforge_cp + chaosforge_exec
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chaosforge -d chaosforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: chaosforge-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092"     # Kafka API
+      - "9644:9644"     # Admin API
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=localhost:9092 | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 600m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  apicurio:
+    image: apicurio/apicurio-registry:3.0.6
+    container_name: chaosforge-apicurio
+    environment:
+      APICURIO_STORAGE_KIND: in-memory        # in-memory (lab). HA/SQL storage required before CP scales (architecture specifications).
+      QUARKUS_HTTP_PORT: "8080"
+    ports:
+      - "8086:8080"                     # Registry v3 API base: http://localhost:8086/apis/registry/v3
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 384m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: chaosforge-redis
+    command: ["redis-server", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    mem_limit: 128m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  # Lab IdP stub (ADR-0524): serves the static JWKS that all three services' JWK_SET_URI default
+  # points at (http://localhost:9000/.well-known/jwks.json). One-time key generation:
+  #   docker/jwks/generate-jwks.sh     (output git-ignored; mint test JWTs with docker/jwks/mint-jwt.sh)
+  # Only docker/jwks/public/ is mounted — the signing key in docker/jwks/keys/ must never be served.
+  # The healthcheck fetches the JWKS itself, so "healthy" <=> the key material is actually present.
+  jwks-stub:
+    image: nginx:1.27-alpine
+    container_name: chaosforge-jwks-stub
+    ports:
+      - "9000:80"
+    volumes:
+      - ./docker/jwks/public:/usr/share/nginx/html/.well-known:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/.well-known/jwks.json >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    mem_limit: 32m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: chaosforge-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=3d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: chaosforge-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-chaosforge}   # override via .env; see .env.example
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Mount the two provisioning subdirs individually so the image's default plugins/ + alerting/ stay intact.
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/dashboards:/etc/dashboards:ro               # SLI dashboard JSON (out of data volume)
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [chaosforge-net]
+
+  # --- Optional: local Ollama for the AI authoring/triage path (Control Plane only). ---
+  # OUTSIDE the 2 GB budget. Enable with: docker compose -f docker-compose_chaosforge.yml --profile ai up -d
+  # Then: docker exec chaosforge-ollama ollama pull llama3.1:8b   (CPU inference is slow — disclose in benchmarks)
+  ollama:
+    image: ollama/ollama:0.4.2
+    container_name: chaosforge-ollama
+    profiles: ["ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    mem_limit: 6g
+    restart: unless-stopped
+    networks: [chaosforge-net]

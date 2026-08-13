@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "Step",
+  "namespace": "io.chaosforge.schema.v1",
+  "fields": [
+    { "name": "stepId",      "type": "string" },
+    { "name": "stepType",    "type": { "type": "enum", "name": "StepType", "symbols": ["LATENCY", "ERROR", "TIMEOUT"] } },
+    { "name": "targetUrl",   "type": "string" },
+    { "name": "method",      "type": "string", "default": "GET" },
+    { "name": "faultConfig", "type": { "type": "map", "values": "string" }, "default": {} }
+  ]
+}

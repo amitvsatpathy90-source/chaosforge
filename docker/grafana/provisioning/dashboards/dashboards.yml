@@ -1,0 +1,12 @@
+# Loads JSON dashboards from /etc/dashboards (bind-mounted, kept out of the grafana-data volume).
+apiVersion: 1
+providers:
+  - name: chaosforge
+    orgId: 1
+    folder: ChaosForge
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/dashboards
+      foldersFromFilesStructure: false

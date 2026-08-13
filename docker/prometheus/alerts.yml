@@ -1,0 +1,275 @@
+# ChaosForge alerting rules (acceptance gate C26/C27).
+#
+# Two SLO alerts are the gated pair — each has a runbook under docs/runbooks/:
+#   - ScenarioCompletionRateBelowSLO   (C27)  → docs/runbooks/scenario-completion-rate.md
+#   - StuckScenarioBudgetExceeded      (C26)  → docs/runbooks/stuck-scenario.md
+# The remaining rules are the operational backstops named in the architecture specifications SLO/SLI tables.
+#
+# Metric names are the real, scraped series (verified against the Grafana SLI dashboard and
+# ExecutionMetrics/OutboxMetrics): Micrometer renders `chaosforge.scenario.execution` as
+# `chaosforge_scenario_execution_total`, etc. NO `tenant_id` label appears anywhere (cardinality rule).
+#
+# "Terminal" = a command reached success | deduped | dlq-routed (all increment
+# chaosforge_scenario_execution_total). The ONLY non-terminal fate is a Phase-2→3 crash, which the
+# IncompleteRunSweeper marks INCOMPLETE and counts via chaosforge_run_swept_incomplete_total — so
+# completion-rate and stuck-rate are computed from those two series alone.
+#
+# Lab note: this Prometheus has no Alertmanager wired (lab footprint). The rules load and evaluate to
+# PENDING/FIRING here (visible on /alerts and via the `ALERTS` series); routing to a pager is the
+# production add-on. See docs/runbooks/README.md.
+
+groups:
+  - name: chaosforge-slo
+    rules:
+      # --- C27: Scenario completion-rate SLO -------------------------------------------------------
+      # SLO: ≥ 95% of accepted commands reach a terminal state within 10 min.
+      # completion_rate = terminal / (terminal + stuck) over a 10m window.
+      - alert: ScenarioCompletionRateBelowSLO
+        expr: |
+          (
+            sum(rate(chaosforge_scenario_execution_total{job="execution-service"}[10m]))
+            /
+            (
+              sum(rate(chaosforge_scenario_execution_total{job="execution-service"}[10m]))
+              + sum(rate(chaosforge_run_swept_incomplete_total{job="execution-service"}[10m]))
+            )
+          ) < 0.95
+        for: 10m
+        labels:
+          severity: page
+          slo: scenario-completion-rate
+        annotations:
+          summary: "Scenario completion rate < 95% SLO (10m)"
+          description: >-
+            Fewer than 95% of accepted commands reached a terminal state in the last 10m — runs are
+            crashing in the Phase-2→3 window and being swept to INCOMPLETE faster than completions
+            accrue. Empty/NaN (no traffic) does not fire.
+          runbook: docs/runbooks/scenario-completion-rate.md
+
+      # --- C26: Stuck-scenario budget --------------------------------------------------------------
+      # SLO: ≤ 1% of scenarios without a terminal event. The sweeper is the concrete signal: any run
+      # it marks INCOMPLETE was stuck past the poll budget. First clause requires real stuck activity
+      # (so 0/0 can't fire); second clause enforces the 1% budget (100%-stuck → ratio 1.0 → fires).
+      - alert: StuckScenarioBudgetExceeded
+        expr: |
+          sum(rate(chaosforge_run_swept_incomplete_total{job="execution-service"}[15m])) > 0
+          and
+          (
+            sum(rate(chaosforge_run_swept_incomplete_total{job="execution-service"}[15m]))
+            /
+            (
+              sum(rate(chaosforge_scenario_execution_total{job="execution-service"}[15m]))
+              + sum(rate(chaosforge_run_swept_incomplete_total{job="execution-service"}[15m]))
+            )
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: page
+          slo: stuck-scenario-budget
+        annotations:
+          summary: "Stuck-scenario budget exceeded (>1% swept INCOMPLETE, 15m)"
+          description: >-
+            The IncompleteRunSweeper is marking runs INCOMPLETE — executions are crashing between the
+            inbox claim (Phase 2) and finalize (Phase 3) and cannot self-heal (their message_id is
+            already inbox-deduped). More than 1% of recent runs are affected.
+          runbook: docs/runbooks/stuck-scenario.md
+
+  - name: chaosforge-operational
+    rules:
+      # DLT GROWTH (SLO: rate == 0). Scoped to hard-poison reasons that REQUIRE human review;
+      # FENCING_VIOLATION is excluded — it is expected under concurrent replay and safe to discard.
+      #
+      # The series is chaosforge_dlq_routed_total — routings, NOT depth (arch-audit F5; renamed from
+      # chaosforge_dlq_depth_total). It is monotonic, so only its rate() is meaningful; there is no
+      # standing-backlog signal in the system at all (see the architecture specifications SLO table). This alert catches
+      # poison ARRIVING, never poison SITTING.
+      #
+      # `by (dlq_reason)` is load-bearing: the summary interpolates {{ $labels.dlq_reason }}, and a bare
+      # sum() aggregates every label away, rendering it blank (arch-audit F5b). It also splits the alert
+      # per reason, which is what a triager needs.
+      - alert: HardPoisonInDLQ
+        expr: |
+          sum by (dlq_reason) (rate(chaosforge_dlq_routed_total{job="execution-service",
+              dlq_reason=~"SCHEMA_INVALID|STEP_FAILED|RETRY_EXHAUSTED"}[10m])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Hard-poison records landing in the DLQ ({{ $labels.dlq_reason }})"
+          description: >-
+            A non-replayable record (SCHEMA_INVALID / STEP_FAILED / RETRY_EXHAUSTED) reached the DLQ
+            and will sit there until a human triages it. The retry consumer never touches these.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Standing triage backlog (ADR-0542) — the LEVEL signal HardPoisonInDLQ (a rate) cannot give.
+      # chaosforge.dlq.untriaged_depth = records past the human-review watermark; emitted by the CP
+      # (job=control-plane), grain (topic, partition). It counts EVERYTHING past the watermark (incl.
+      # retry-lane-drained records Kafka still retains), so advancing the watermark via
+      # PUT /v1/dlq/{topic}/reviewed is the triage action that clears it. `for: 1h` frames that as the
+      # SLA: a backlog persisting an hour is a ticket, a blip that gets triaged is not.
+      - alert: DlqTriageBacklog
+        expr: max by (topic, partition) (chaosforge_dlq_untriaged_depth{job="control-plane"}) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "DLQ triage backlog on {{ $labels.topic }} partition {{ $labels.partition }}"
+          description: >-
+            Records have sat past the human-review watermark for over an hour. Triage them and advance
+            the watermark with PUT /v1/dlq/{topic}/reviewed to clear this; the gauge trusts that an
+            operator reviewed, it does not verify disposition.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Meta-alert for the gauge above (mirrors RPE's Bundle-1 frozen-gauge fix): the depth poller
+      # itself is failing — chaosforge_dlq_untriaged_depth is frozen at its last value (0 at boot =
+      # false-healthy) and DlqTriageBacklog is blind while this fires. Polls run every 30s, so >5
+      # failed polls in 10m is sustained breakage, not one blip.
+      - alert: DlqDepthPollFailing
+        expr: sum by (topic) (increase(chaosforge_dlq_depth_poll_failures_total{job="control-plane"}[10m])) > 5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "DLQ depth poll failing on {{ $labels.topic }} — triage-backlog signal is blind"
+          description: >-
+            chaosforge.dlq.untriaged_depth has not refreshed for this topic (frozen at its last
+            value; a low reading does NOT mean the DLQ is clear). Fix the poll — broker
+            reachability from the CP is the first suspect — before trusting DlqTriageBacklog.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Publish-side terminal failure: an outbox row hit MAX_ATTEMPTS and was parked DEAD. BOTH relays —
+      # the CP command outbox AND the exec result-event outbox (arch-audit H3): the `by (job)` keeps them
+      # distinct so the alert names which service's relay is stuck.
+      - alert: OutboxDeadLetterPresent
+        expr: max by (job) (outbox_dead_count{job=~"control-plane|execution-service"}) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Outbox has DEAD rows on {{ $labels.job }} (publish exhausted MAX_ATTEMPTS)"
+          description: "One or more outbox rows could not be published after the full retry budget."
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Outbox relay stalled: the poller should drain PENDING within seconds. A minute of age = stuck.
+      # Covers both the CP command relay and the exec result-event relay (arch-audit H3).
+      - alert: OutboxRelayLagging
+        expr: max by (job) (outbox_oldest_pending_age_seconds{job=~"control-plane|execution-service"}) > 60
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Outbox oldest-pending age > 60s on {{ $labels.job }} (relay lagging)"
+          description: "The outbox poller is not draining PENDING rows — Kafka publish path may be down."
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # C28 hard-failure tripwire (partitioning-rules §1): a row in a `_default` partition can NEVER be
+      # dropped and permanently blocks that day's real partition. Non-zero is an INCIDENT, not a warning —
+      # page-worthy the moment it appears, on either partitioned service (CP outbox; exec inbox+outbox).
+      - alert: PartitionDefaultRowsPresent
+        expr: max by (job, table) (chaosforge_partition_default_rows{job=~"control-plane|execution-service"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Rows trapped in {{ $labels.job }} {{ $labels.table }}_default (un-droppable partition)"
+          description: >-
+            A row landed in a DEFAULT partition — it can never be purged by partition-drop and blocks
+            creating that day's real partition (unbounded growth). Investigate a skewed message_id clock
+            or a create-ahead stall immediately.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Straggler-lane backlog (architecture specifications SLI: alert > 0 sustained). PENDING rows older than the hot-lane
+      # claim window are reachable only by the slow straggler lane; a sustained non-zero value means rows
+      # are aging toward their partition-drop age before delivery — the C28 retention fuse burning down.
+      - alert: OutboxStragglerBacklog
+        expr: max by (job) (outbox_pending_outside_claim_window{job=~"control-plane|execution-service"}) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Outbox straggler backlog on {{ $labels.job }} (rows outside the hot claim window)"
+          description: >-
+            PENDING outbox rows are older than the hot-lane claim window and depend on the slow straggler
+            lane — they risk aging past partition-drop retention before publish.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Command-accept latency SLO: P99 ≤ 300ms from POST to outbox commit (CP HTTP path). EXCLUDES the AI
+      # authoring path (`/v1/ai/**`): local Ollama inference is intentionally 10–60s (architecture specifications) and would
+      # otherwise dominate the aggregate quantile and false-fire this SLO permanently (arch-audit H3).
+      - alert: CommandAcceptLatencyP99High
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(http_server_requests_seconds_bucket{
+              job="control-plane", uri!~"/v1/ai/.*"}[5m]))) > 0.3
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Control-plane HTTP P99 > 300ms (command-accept SLO)"
+          description: "P99 request latency on the Control Plane (excluding AI authoring) breached the 300ms command-accept SLO."
+          runbook: docs/runbooks/dlq-and-outbox.md
+
+      # Deployment security posture (arch-audit F2). DeploymentPostureGuard fails startup when
+      # chaosforge.deployment=deployed and any control is off — so "deployed + unhardened" can never be
+      # SCRAPED (the process is dead) and is not what this catches. This catches the one case the
+      # fail-fast structurally cannot: the CHAOSFORGE_DEPLOYMENT marker itself forgotten, leaving a real
+      # deployment running on lab posture (plain HTTP; on the CP, /internal permitAll with an unverified
+      # peer-asserted tenantId — the ADR-0532 cross-tenant read; on exec, no SSRF ceiling on the service
+      # that fires the faults). A flag cannot protect against a forgotten flag; this gauge is that cover.
+      #
+      # env!="lab" is the whole trick and is FAIL-CLOSED — see the comment in prometheus.yml. The lab
+      # stamps env=lab and is unhardened by design, so this stays inert here; any Prometheus without an
+      # env label matches ("" != "lab") and fires. Because it can never fire against live lab data, its
+      # firing behaviour is proven by promtool unit tests instead (docker/prometheus/alerts_test.yml —
+      # inert on env=lab, fires on an absent env label, fires per-job on a partial rollout, honours
+      # for: 5m). Keep those tests in step with this rule's annotations; they assert them verbatim.
+      - alert: SecurityPostureNotHardened
+        expr: max by (job) (chaosforge_security_hardened{env!="lab"}) == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} is running on LAB security posture outside the lab"
+          description: >-
+            A non-lab instance reports chaosforge_security_hardened=0: at least one control (mTLS,
+            client-auth=need, /internal CN scoping, client cert to the CP over https, or the SSRF
+            allowlist) is OFF, and it started anyway because chaosforge.deployment was not set to
+            'deployed'. The startup WARN on that instance names exactly which controls are missing.
+          runbook: docs/runbooks/security-posture.md
+
+  - name: chaosforge-gateway
+    rules:
+      # Per-tenant rate limits silently disabled (arch-audit H1). The gateway's tenant-policy loader
+      # fell back to the DEFAULT policy for every request — before the fix an unauthenticated call to the
+      # JWT-guarded /v1 API 401'd on every load, so no tenant's configured limit ever applied. A sustained
+      # fallback rate means the policy feed is broken, not a one-off blip.
+      - alert: TenantPolicyFeedDown
+        expr: |
+          sum(rate(chaosforge_gateway_policy_load_total{job="edge-gateway", outcome="fallback"}[5m]))
+          /
+          sum(rate(chaosforge_gateway_policy_load_total{job="edge-gateway"}[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Gateway tenant-policy feed failing (>50% loads fall back to default)"
+          description: >-
+            More than half of tenant-policy loads are falling back to the default policy — per-tenant
+            rate limits are effectively not being enforced. Check CP /internal/tenants policy endpoint,
+            the mTLS client cert, and the cache-load circuit breaker.
+          runbook: docs/runbooks/gateway-rate-limit-and-policy.md
+
+      # Rate limiting failing open (arch-audit H3): Redis/policy errors let requests through unthrottled.
+      # Fail-open is by design during a Redis outage (architecture specifications), but a sustained signal means the limiter
+      # is globally disabled — this makes that condition visible instead of silent.
+      - alert: RateLimitFailingOpen
+        expr: sum(rate(chaosforge_gateway_rate_limit_total{job="edge-gateway", outcome="fail_open"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Gateway rate limiting is failing open (backend unavailable)"
+          description: >-
+            The edge gateway is allowing requests unthrottled because the rate-limit backend (Redis or
+            the policy lookup) errored. Per-tenant limits are not being enforced while this fires.
+          runbook: docs/runbooks/gateway-rate-limit-and-policy.md

@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# SLO + operational alert rules (acceptance gate C26/C27). Loaded and evaluated by this Prometheus;
+# routing to Alertmanager is the production add-on (lab footprint has no Alertmanager). See
+# docs/runbooks/ for the per-alert response procedures.
+rule_files:
+  - alerts.yml
+
+# Services run on the host via `./gradlew :<svc>:bootRun` (CP + Exec are Compose-local per the
+# Known Limitations; the Gateway is also host-local in the lab). Prometheus reaches them via
+# host.docker.internal (works on Docker Desktop / macOS). On Linux, add to each service:
+#   extra_hosts: ["host.docker.internal:host-gateway"]
+# `env: lab` is load-bearing, not decoration (arch-audit F2). SecurityPostureNotHardened alerts on
+# `chaosforge_security_hardened{env!="lab"} == 0`. In THIS lab the services are unhardened BY DESIGN
+# (no mtls profile), so an unqualified rule would fire forever — the "background noise" this repo's
+# alerting discipline rejects. Stamping env=lab here makes the rule inert locally while staying
+# FAIL-CLOSED elsewhere: PromQL treats an absent label as "", so any deployed Prometheus written
+# without an `env` label still matches `env!="lab"` and alerts. Removing this label re-arms the rule
+# against the lab; setting env=lab on a real deployment silences a genuine incident. Do neither.
+scrape_configs:
+  - job_name: edge-gateway
+    metrics_path: /actuator/prometheus
+    # SEC-04: actuator is on the gateway's PRIVATE management port (9080), not the public 8080 ingress.
+    static_configs:
+      - targets: ["host.docker.internal:9080"]
+        labels: { env: lab }
+
+  - job_name: control-plane
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+        labels: { env: lab }
+
+  - job_name: execution-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+        labels: { env: lab }
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

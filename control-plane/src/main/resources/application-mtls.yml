@@ -1,0 +1,55 @@
+# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+#
+# The Control Plane is a SERVER on the intra-service mesh: it accepts inbound from the Edge Gateway
+# (replay / get) AND from the Execution Service (rule-set load). Both must present a client certificate
+# signed by the internal CA — `client-auth: need` makes the cert mandatory, rejected at the TLS layer
+# before any controller or filter runs. mTLS answers "is this the gateway/exec process?"; the JWT
+# (re-verified by JwtTenantExtractionFilter) answers "which tenant?" — two independent checks (ADR-0524).
+#
+# Secrets posture: keystore/truststore PASSWORDS come from env vars with NO default — a missing password
+# fails startup fast. Only the lab file LOCATIONS carry a localhost default. Never inline secrets here.
+server:
+  ssl:
+    bundle: internal-mtls
+    client-auth: need          # mandatory client cert — not "want" (mtls-rules.md forbids "want")
+
+spring:
+  ssl:
+    bundle:
+      jks:
+        internal-mtls:
+          key:
+            alias: control-plane          # the single entry in this service's keystore
+          keystore:
+            location: ${MTLS_KEYSTORE:file:./docker/mtls/certs/control-plane-keystore.p12}
+            password: ${MTLS_KEYSTORE_PASSWORD}
+            type: PKCS12
+          truststore:
+            location: ${MTLS_TRUSTSTORE:file:./docker/mtls/certs/truststore.p12}
+            password: ${MTLS_TRUSTSTORE_PASSWORD}
+            type: PKCS12
+
+chaosforge:
+  mtls:
+    # /internal is PER-PATH cert-subject-scoped (ADR-0532). mTLS proves a valid internal-CA peer; these
+    # CNs additionally bind each internal path to the ONE peer allowed to call it — any other cert holder
+    # is 403, and an unmapped /internal path is denyAll (fail-closed). Must equal the CN in each client
+    # cert (key alias = service name per ADR-0531); override if the CA generator uses a different DN.
+    # Setting internal-peer-cn also ACTIVATES the X.509 authorization chain (InternalMtlsSecurityConfig);
+    # absent it (dev/tests), /internal stays permitAll.
+    internal-peer-cn: ${MTLS_INTERNAL_PEER_CN:execution-service}       # → /internal/rule-sets/**
+    internal-gateway-cn: ${MTLS_INTERNAL_GATEWAY_CN:edge-gateway}      # → /internal/tenants/*/policy
+  # Authoring-time blast-radius containment travels with the deployed (mtls) profile (arch-audit HIGH-2).
+  # Mirrors the executor's guard; pin allowed-hosts to the sanctioned system(s) under test.
+  target:
+    block-private-networks: ${TARGET_BLOCK_PRIVATE:true}
+    allowed-hosts: ${TARGET_ALLOWED_HOSTS:}
+
+# SRE-01: the deployed artifact always runs this profile (DeploymentPostureGuard requires it under
+# CHAOSFORGE_DEPLOYMENT=deployed), so it emits ECS-JSON console logs — trace_id/span_id (Micrometer Brave
+# MDC) and structured fields become first-class, log-pipeline-queryable, not interpolated into free text.
+# Dev/tests/local run the default profile and keep the human-readable pattern. Boot 4 native, no new dep.
+logging:
+  structured:
+    format:
+      console: ecs

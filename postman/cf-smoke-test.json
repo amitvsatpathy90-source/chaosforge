@@ -1,0 +1,185 @@
+{
+	"info": {
+		"_postman_id": "c1f2a3b4-5678-90ab-cdef-1234567890ab",
+		"name": "ChaosForge Smoke Test",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "CP_URL", "value": "http://localhost:8081" },
+		{ "key": "GATEWAY_URL", "value": "http://localhost:8080" },
+		{ "key": "OPERATOR_JWT", "value": "" },
+		{ "key": "TENANT_ID", "value": "" },
+		{ "key": "TENANT_JWT", "value": "" },
+		{ "key": "RULE_SET_ID", "value": "" },
+		{ "key": "RULE_SET_VERSION", "value": "1" },
+		{ "key": "SCENARIO_ID", "value": "" },
+		{ "key": "ETAG", "value": "" },
+		{ "key": "AI_JWT", "value": "" }
+	],
+	"item": [
+		{
+			"name": "1. Create Tenant",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.tenantId) {",
+							"    pm.collectionVariables.set('TENANT_ID', jsonData.tenantId);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{OPERATOR_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"smoke-test-tenant\"\n}"
+				},
+				"url": {
+					"raw": "{{CP_URL}}/v1/tenants",
+					"host": ["{{CP_URL}}"],
+					"path": ["v1", "tenants"]
+				}
+			}
+		},
+		{
+			"name": "2. Create Rule-Set",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.ruleSetId) {",
+							"    pm.collectionVariables.set('RULE_SET_ID', jsonData.ruleSetId);",
+							"    pm.collectionVariables.set('RULE_SET_VERSION', jsonData.version);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{TENANT_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"smoke-test-ruleset\",\n  \"definition\": \"[{\\\"stepId\\\":\\\"step1\\\",\\\"targetUrl\\\":\\\"http://localhost:9090/-/healthy\\\",\\\"method\\\":\\\"GET\\\"}]\"\n}"
+				},
+				"url": {
+					"raw": "{{CP_URL}}/v1/rule-sets",
+					"host": ["{{CP_URL}}"],
+					"path": ["v1", "rule-sets"]
+				}
+			}
+		},
+		{
+			"name": "3. Create Scenario",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.scenarioId) {",
+							"    pm.collectionVariables.set('SCENARIO_ID', jsonData.scenarioId);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{TENANT_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"smoke-test\",\n  \"ruleSetId\": \"{{RULE_SET_ID}}\",\n  \"ruleSetVersion\": {{RULE_SET_VERSION}}\n}"
+				},
+				"url": {
+					"raw": "{{CP_URL}}/v1/scenarios",
+					"host": ["{{CP_URL}}"],
+					"path": ["v1", "scenarios"]
+				}
+			}
+		},
+		{
+			"name": "4. Fetch Scenario via Gateway (Capture ETag)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var etagHeader = pm.response.headers.get('ETag');",
+							"if (etagHeader) {",
+							"    var cleanEtag = etagHeader.replace(/\"/g, '');",
+							"    pm.collectionVariables.set('ETAG', cleanEtag);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{TENANT_JWT}}" }
+				],
+				"url": {
+					"raw": "{{GATEWAY_URL}}/v1/scenarios/{{SCENARIO_ID}}",
+					"host": ["{{GATEWAY_URL}}"],
+					"path": ["v1", "scenarios", "{{SCENARIO_ID}}"]
+				}
+			}
+		},
+		{
+			"name": "5. Trigger Scenario Replay",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{TENANT_JWT}}" },
+					{ "key": "If-Match", "value": "\"{{ETAG}}\"" },
+					{ "key": "Idempotency-Key", "value": "{{$guid}}" }
+				],
+				"url": {
+					"raw": "{{GATEWAY_URL}}/v1/scenarios/{{SCENARIO_ID}}:run",
+					"host": ["{{GATEWAY_URL}}"],
+					"path": ["v1", "scenarios", "{{SCENARIO_ID}}:run"]
+				}
+			}
+		},
+		{
+			"name": "6. AI Scenario Authoring Draft",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{AI_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"description\": \"latency-test target https://httpbin.org\"\n}"
+				},
+				"url": {
+					"raw": "{{CP_URL}}/v1/ai/scenario-drafts",
+					"host": ["{{CP_URL}}"],
+					"path": ["v1", "ai", "scenario-drafts"]
+				}
+			}
+		}
+	]
+}

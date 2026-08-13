@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "ScenarioRunResult",
+  "namespace": "io.chaosforge.schema.v1",
+  "fields": [
+    { "name": "scenarioId",    "type": "string" },
+    { "name": "tenantId",      "type": "string" },
+    { "name": "replayVersion", "type": "long" },
+    { "name": "outcome",       "type": "string", "doc": "Terminal scenario_run status (COMPLETED | FAILED | ABORTED | INCOMPLETE | ...). Deliberately a string, not an enum: adding a terminal state must never be a schema change (enum symbol additions are not FULL_TRANSITIVE-safe)." },
+    { "name": "finishedAt",    "type": { "type": "long", "logicalType": "timestamp-millis" } }
+  ]
+}

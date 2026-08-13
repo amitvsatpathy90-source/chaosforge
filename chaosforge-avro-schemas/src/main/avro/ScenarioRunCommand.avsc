@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "ScenarioRunCommand",
+  "namespace": "io.chaosforge.schema.v1",
+  "fields": [
+    { "name": "scenarioId",      "type": "string" },
+    { "name": "tenantId",        "type": "string" },
+    { "name": "replayVersion",   "type": "long" },
+    { "name": "ruleSetId",       "type": "string" },
+    { "name": "ruleSetVersion",  "type": "int" },
+    { "name": "steps",           "type": { "type": "array", "items": "io.chaosforge.schema.v1.Step" }, "default": [] },
+    { "name": "commandIssuedAt", "type": { "type": "long", "logicalType": "timestamp-millis" } }
+  ]
+}

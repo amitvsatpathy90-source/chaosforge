@@ -1,0 +1,181 @@
+server:
+  port: 8081
+  # NOTE (mtls-rules.md): intra-service mTLS is MANDATORY outside the lab. Enable the internal-CA
+  # bundle in the deployed profile (client-auth: need). Left off here so dev/tests run on plain HTTP:
+  #   ssl:
+  #     bundle: internal-mtls
+  #     client-auth: need
+
+spring:
+  application:
+    name: control-plane
+  threads:
+    virtual:
+      enabled: true            # MVC + Java 21 virtual threads (ADR-0500)
+  task:
+    scheduling:
+      # Four @Scheduled jobs run here: the outbox hot poll(), the outbox straggler lane, partition
+      # maintenance, and the replay_idempotency GC janitor. Default pool size is 1 — a stalled poll()
+      # (broker down) would block the others. Give each its own thread.
+      pool:
+        size: 4
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}      # L2 of the two-level cache + invalidation pub/sub (ADR-0504)
+  datasource:
+    # Credentials/URL are env-var-driven (secure "env vars only" posture); the defaults after ':' are
+    # the local Compose-dev fallback only — override in any deployed profile via env/mounted secrets.
+    # Deliberately NOT fail-fast like the mTLS bundle passwords below: this DB is never internet-facing
+    # (Compose-local/lab only), so a silent dev default is an acceptable asymmetry, not an oversight.
+    url: ${CP_DB_URL:jdbc:postgresql://localhost:5432/chaosforge_cp}
+    username: ${DB_USERNAME:chaosforge}
+    password: ${DB_PASSWORD:chaosforge}
+    hikari:
+      # Bounded CONNECTION pool — NOT a platform-thread pool; the earlier "bounded platform-thread JDBC
+      # pool" wording conflated the two (arch-audit F1). This block is where the JDBC threading decision is
+      # recorded (control-plane-rules.md): JDBC runs directly on the request virtual thread — option 1,
+      # "accept the pinning" — and there is no jdbcExecutor bean. It is safe because pinning measures ZERO:
+      # PgJDBC + HikariCP use ReentrantLock, not synchronized, around blocking I/O, so the VT unmounts
+      # cleanly on socket and pool waits. Pinned by VirtualThreadJdbcPinningIT; driver/pool are BOM-managed
+      # (not in libs.versions.toml), so re-run that harness after a Boot BOM bump.
+      maximum-pool-size: 20
+      # TIME ZONE 'UTC': partition day-boundaries are `day::timestamptz`, interpreted in the SESSION tz.
+      # PartitionMaintenance computes day-keys with LocalDate.now(UTC); if the session tz were not UTC the
+      # two would disagree and drop-old could evict within-retention rows (arch-audit 2.6). Pin it.
+      connection-init-sql: "SET TIME ZONE 'UTC'; SET statement_timeout = '5s'"   # backstop; CAS tx also uses @Transactional(timeout=5)
+  flyway:
+    enabled: true                # Boot runs migrations at startup; a bad migration fails the boot (ADR-0530)
+    locations: classpath:db/migration
+    clean-disabled: true         # prod safety: `flyway clean` must never be able to wipe the schema
+    validate-on-migrate: true    # checksum-validate every applied migration on each boot
+  sql:
+    init:
+      mode: never
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}   # same var the exec service reads
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # JWK set is re-verified at CP (ADR-0524). Fail-fast if unreachable at first decode.
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
+  ai:
+    # Spring AI — Control Plane ONLY (ADR-0518/0521). Local Ollama default; slow CPU inference is
+    # expected — disclose in benchmarks. No prompt leaves the host in this (non-cloud) profile.
+    ollama:
+      base-url: ${OLLAMA_URL:http://localhost:11434}
+      init:
+        pull-model-strategy: never      # never auto-pull at startup; model is provisioned out-of-band
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:llama3.1:8b}
+          temperature: 0.2
+          format: json                  # structured-output mode for BeanOutputConverter
+
+chaosforge:
+  # Deployment posture marker (arch-audit F2), asserted by DeploymentPostureGuard at startup.
+  #   lab      — permissive; plain HTTP, /internal permitAll, SSRF guard inert. The DEFAULT, because no
+  #              test here uses @ActiveProfiles (all run on the default profile), so a fail-closed default
+  #              would fail the whole suite.
+  #   deployed — asserts the posture is real: the 'mtls' profile MUST be active and
+  #              chaosforge.target.allowed-hosts MUST be non-empty, else the context refuses to refresh
+  #              and the port never opens. Set CHAOSFORGE_DEPLOYMENT=deployed in every non-lab artifact.
+  # A marker cannot cover its own omission — that residual is carried by the
+  # chaosforge.security.mtls_active gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
+  deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
+  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # iss is an exact-string match, aud must contain this value. Lab defaults match what
+  # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:http://localhost:9000}
+      audience: ${JWT_AUDIENCE:chaosforge}
+  outbox:
+    poll-interval-ms: 1000
+    batch-size: 64
+    max-attempts: 8           # record-FATAL rows crossing this are quarantined as DEAD (ADR-0528; alert,
+                              # not DLQ). Broker-global failures never DEAD — they back off at the cap
+                              # under the relay-lag alerts (an outage must not force manual data repair).
+    lease-seconds: 30         # claim visibility timeout; must exceed send-timeout-ms
+    send-timeout-ms: 10000    # ONE shared harvest deadline per pipelined batch (not per record)
+    base-backoff-seconds: 2
+    cap-backoff-seconds: 300
+    # Hot-lane claim bound (plan-shape guardrail): MUST stay < chaosforge.partition.outbox-retention-days
+    # (3) or rows would go straggler-only just as their partition drops. Rows older than this are picked
+    # up by the slow straggler lane below — no PENDING row is ever unreachable before its partition drops.
+    claim-window-days: 2
+    straggler-poll-interval-ms: 300000
+    straggler-batch-size: 16
+    # NOTE (GAP-05): outbox retention is governed by chaosforge.partition.outbox-retention-days
+    # (partition-drop, C28). The former chaosforge.outbox.{retention-days,purge-cron} keys here were dead
+    # — read by no code (the DELETE-based purge they configured was superseded) — and misstated retention
+    # to on-call (7d vs the real 3d partition retention), so they were removed.
+  dlq:
+    # Standing DLQ-depth signal (ADR-0542): chaosforge.dlq.untriaged_depth{topic,partition} =
+    # endOffset − human-review watermark. A read-only, group-less KafkaConsumer reads begin/end offsets
+    # on a timer; the watermark is advanced by PUT /v1/dlq/{topic}/reviewed (OPERATOR-gated). Grain is
+    # (topic, partition), never dlq_reason (ADR-0542 Alternative 1) and never tenant_id.
+    depth:
+      topics: ${DLQ_DEPTH_TOPICS:chaosforge.scenario.commands.v1.DLQ}   # comma-separated
+      refresh-ms: 30000
+      request-timeout-ms: 5000
+  replay-idempotency:
+    # TTL janitor for the at-most-once client-retry guard (ADR-0528). Index-backed, chunked,
+    # SKIP-LOCKED deletes; bounded at chunk-size × max-chunks-per-run rows per invocation.
+    gc:
+      cron: "0 0 4 * * *"        # off-peak nightly
+      retention-hours: 24        # a lost-202 retry is meaningless after this; COMPLETED keys expire
+      chunk-size: 500            # short tx; stays well under statement_timeout (5s)
+      max-chunks-per-run: 1000   # ≤ 500k rows/run; remainder taken next run
+  ai:
+    # Optional global allowlist for AI-proposed target hosts. Empty = SSRF guard only (lab); a
+    # per-tenant tenant_targets table is the deferred enhancement (TenantTargetValidator).
+    allowed-target-hosts: ${AI_ALLOWED_TARGET_HOSTS:}
+  # SSRF / blast-radius guard applied to rule-set targets at AUTHORING (arch-audit HIGH-2) — the same
+  # policy the executor enforces at run time, so a bad target is a 422 at create, not a late STEP_FAILED.
+  # OFF here (dev/tests target localhost); a deployed profile turns it on — see application-mtls.yml.
+  target:
+    block-private-networks: ${TARGET_BLOCK_PRIVATE:false}
+    allowed-hosts: ${TARGET_ALLOWED_HOSTS:}
+
+# Per-instance config only — NO configs.default. The Ollama authoring boundary (the only outbound
+# boundary in the CP) wired with CB + bulkhead. Timeout is bounded by the Ollama client, not R4j
+# TimeLimiter (blocking VT path; local CPU inference is intentionally slow — ai-rules.md).
+resilience4j:
+  circuitbreaker:
+    instances:
+      # Records only model-call failures: Bean Validation + target-ownership run in the service,
+      # OUTSIDE this breaker, so a malformed/unauthorized draft is a 422 and never a CB fault.
+      ollama-chat:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      ollama-chat:
+        max-concurrent-calls: 4       # LLM calls are slow; don't queue 100 VTs (ai-rules.md)
+
+management:
+  # trace_id/MDC correlation only — sample everything so every request log carries a trace_id.
+  # No exporter is on the classpath: spans are never shipped anywhere (ADR-0505 — no collector in lab).
+  tracing:
+    sampling:
+      probability: 1.0
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus   # never env/beans/heapdump/threaddump
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: control-plane

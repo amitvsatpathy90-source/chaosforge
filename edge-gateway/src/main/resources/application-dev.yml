@@ -1,0 +1,12 @@
+# Dev-only flags (build-prompt §49). To hunt accidental blocking calls on the event loop, add
+# BlockHound (dependency + agent) and the Reactor Debug Agent in this profile only:
+#   - BlockHound.install()        — fail-fast on a blocking call from a non-blocking scheduler
+#   - ReactorDebugAgent.init()    — readable async stack traces
+# Kept as documentation to avoid shipping the agents on the main classpath.
+logging:
+  level:
+    io.chaosforge: DEBUG
+    org.springframework.web.reactive.function.client: DEBUG
+reactor:
+  netty:
+    ioWorkerCount: 4

@@ -1,0 +1,51 @@
+# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+#
+# The Execution Service is BOTH sides of the mesh:
+#   - SERVER: its management/admin HTTP endpoints require a client cert (`client-auth: need`). The
+#     @KafkaListener path carries no HTTP JWT — tenant identity there is the signed Avro payload,
+#     verified at pipeline step 1 (mtls-rules.md), so this server posture guards only the HTTP surface.
+#   - CLIENT: the rule-set fetch to the Control Plane (CpRuleSetLoader → controlPlaneRestClient) presents
+#     this same internal-CA cert. `chaosforge.mtls.client-bundle` switches that client onto mTLS.
+#
+# Secrets posture: passwords from env (no default → fail fast); only lab file locations have defaults.
+server:
+  ssl:
+    bundle: internal-mtls
+    client-auth: need
+
+spring:
+  ssl:
+    bundle:
+      jks:
+        internal-mtls:
+          key:
+            alias: execution-service
+          keystore:
+            location: ${MTLS_KEYSTORE:file:./docker/mtls/certs/execution-service-keystore.p12}
+            password: ${MTLS_KEYSTORE_PASSWORD}
+            type: PKCS12
+          truststore:
+            location: ${MTLS_TRUSTSTORE:file:./docker/mtls/certs/truststore.p12}
+            password: ${MTLS_TRUSTSTORE_PASSWORD}
+            type: PKCS12
+
+chaosforge:
+  mtls:
+    client-bundle: internal-mtls            # Exec → CP rule-set call now presents a client cert
+  control-plane:
+    base-url: ${CONTROL_PLANE_URL:https://localhost:8081}   # CP serves HTTPS under the mtls profile
+  # Blast-radius containment travels with the deployed (mtls) profile (arch-audit HIGH-2). SSRF guard ON;
+  # pin allowed-hosts to the sanctioned system(s) under test — e.g. the RPE ingress host ChaosForge injects
+  # faults against. Empty allowlist = "any public host", so populate it before running against real targets.
+  target:
+    block-private-networks: ${TARGET_BLOCK_PRIVATE:true}
+    allowed-hosts: ${TARGET_ALLOWED_HOSTS:}
+
+# SRE-01: the deployed artifact always runs this profile (DeploymentPostureGuard requires it under
+# CHAOSFORGE_DEPLOYMENT=deployed), so it emits ECS-JSON console logs — trace_id/span_id (Micrometer Brave
+# MDC) and structured fields become first-class, log-pipeline-queryable, not interpolated into free text.
+# Dev/tests/local run the default profile and keep the human-readable pattern. Boot 4 native, no new dep.
+logging:
+  structured:
+    format:
+      console: ecs

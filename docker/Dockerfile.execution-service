@@ -1,0 +1,19 @@
+# See Dockerfile.control-plane for the pattern rationale. Build from the REPO ROOT:
+#   docker build -f docker/Dockerfile.execution-service -t chaosforge/execution-service:<git-sha> .
+FROM eclipse-temurin:21.0.7_6-jdk AS build
+WORKDIR /build
+COPY . .
+RUN ./gradlew -q --no-daemon :execution-service:bootJar -x test \
+    && find execution-service/build/libs -name '*.jar' ! -name '*-plain.jar' -exec cp {} /app.jar \;
+
+FROM eclipse-temurin:21.0.7_6-jre
+# Non-root runtime (SEC-02): a JVM/deserialization RCE must not inherit root in-container. Fixed uid/gid
+# so a K8s runAsNonRoot/runAsUser can pin it. temurin (Ubuntu-based) ships groupadd/useradd.
+RUN groupadd --system --gid 1001 chaosforge \
+ && useradd --system --uid 1001 --gid chaosforge --no-create-home --shell /usr/sbin/nologin chaosforge
+WORKDIR /app
+COPY --from=build --chown=chaosforge:chaosforge /app.jar app.jar
+USER chaosforge
+EXPOSE 8082
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75"
+ENTRYPOINT ["java", "-jar", "app.jar"]

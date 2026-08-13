@@ -1,0 +1,110 @@
+# CI: quality gate on every push/PR; image push to ECR only on main (or manual dispatch).
+#
+# The test gate is `./gradlew check`, which already carries the project's own acceptance gates —
+# including avroSchemaCompatibilityCheck (C29, a `check` dependency): a FULL_TRANSITIVE schema
+# violation fails CI here, never surfaces as a runtime consumer surprise.
+#
+# AWS access is OIDC role assumption (no stored AWS keys — chaosforge-infra foundation/iam-oidc.tf).
+# Two repository variables must be set (Settings -> Secrets and variables -> Actions -> Variables):
+#   AWS_DEPLOY_ROLE_ARN   foundation's `deploy_role_arn` output
+#   AWS_REGION            e.g. us-east-1
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails if a PUBLIC doc references a test/class/ADR that no longer exists (scripts/check-doc-drift.sh).
+  # CI sees only public files — local architecture specs are gitignored, so this catches
+  # README/design-doc drift. The FULL check (incl. those private files) is the local pre-upload run.
+  doc-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-doc-drift.sh
+      # Every ADR must declare a valid Status, and a SUPERSEDED one must name its successor — so
+      # "which ADR is current?" stays answerable as the set grows (architectural supersession rule).
+      - run: bash scripts/check-adr-status.sh
+
+  # Lints the migration-safety gate itself — it is bash 4+ (mapfile, declare -A associative
+  # arrays), so shellcheck catches a portability/quoting regression before it silently mis-parses
+  # a diff. shellcheck is preinstalled on ubuntu-latest.
+  lint-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/check-migration-safety.sh
+
+  # Migration-compat gate for schema-rules.md's expand-contract protocol (ADR-0527 §Migration;
+  # chaosforge-infra arch-audit F-09). The rule already existed in prose here — this job is the
+  # enforcement half that was missing. Fails if a newly added Flyway migration contains destructive
+  # DDL (DROP COLUMN/TABLE, RENAME, SET NOT NULL) with no explicit
+  # `-- migration-safety: override <reason>` marker.
+  migration-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed to diff against origin/main
+      - run: |
+          bash scripts/check-migration-safety.sh \
+            control-plane/src/main/resources/db/migration \
+            execution-service/src/main/resources/db/migration
+
+  # Runs the promtool unit tests for the Prometheus alert rules (docker/prometheus/alerts_test.yml).
+  # These were a MANUAL gate (system design limitations); wiring them here means a PromQL edit that
+  # breaks an SLO alert — e.g. SecurityPostureNotHardened, the only cover for a forgotten deployment
+  # marker — fails CI, not the incident it was meant to catch (SRE-03). promtool ships in the pinned
+  # Prometheus image, so no extra install and the version matches the running lab Prometheus.
+  alert-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker run --rm -v "$PWD/docker/prometheus:/cfg:ro" \
+            --entrypoint /bin/sh prom/prometheus:v2.55.1 -c \
+            "promtool check config /cfg/prometheus.yml && promtool test rules /cfg/alerts_test.yml"
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4 # wrapper-aware caching
+      - run: ./gradlew check
+
+  push-images:
+    # Images only from main (or a deliberate manual run) — a PR build must never publish.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for the AWS role assumption
+    strategy:
+      matrix:
+        service: [edge-gateway, control-plane, execution-service]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      # Tag = commit SHA. The ECR app repos are IMMUTABLE (chaosforge-infra ecr.tf) — a tag is one
+      # specific build, forever; deploying a new build means passing the new SHA to terraform as
+      # image_tag, not silently mutating a tag.
+      - run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/chaosforge/${{ matrix.service }}:${GITHUB_SHA::12}"
+          docker build -f docker/Dockerfile.${{ matrix.service }} -t "$IMAGE" .
+          docker push "$IMAGE"

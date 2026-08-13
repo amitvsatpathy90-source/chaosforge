@@ -1,0 +1,93 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: edge-gateway
+  # Boot default is `limited` — MDC (trace_id) would not follow the reactive chain across operator
+  # boundaries. `auto` enables Reactor automatic context propagation so log lines inside the chain
+  # carry the request's trace_id (micrometer context-propagation is on the classpath via tracing).
+  reactor:
+    context-propagation: auto
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
+
+chaosforge:
+  # Deployment posture marker (arch-audit F2), asserted by DeploymentPostureGuard at startup.
+  #   lab      — permissive; plaintext, unauthenticated leg to the CP. The DEFAULT, because no test here
+  #              uses @ActiveProfiles (all run on the default profile), so a fail-closed default would fail
+  #              the whole suite.
+  #   deployed — asserts the INTRA-service leg is real: an internal-CA client cert (chaosforge.mtls
+  #              .client-bundle) presented over an https:// control-plane base-url. Otherwise the context
+  #              refuses to refresh and the listener never binds. Set CHAOSFORGE_DEPLOYMENT=deployed in
+  #              every non-lab artifact.
+  # Scope: this covers the gateway's OUTBOUND leg only. The PUBLIC listener is HTTP by design here (it
+  # would need a public CA cert; TLS terminates upstream — ADR-0531), so the guard says nothing about it.
+  # A marker cannot cover its own omission — that residual is carried by the chaosforge.security.hardened
+  # gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
+  deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
+  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # iss is an exact-string match, aud must contain this value. Lab defaults match what
+  # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:http://localhost:9000}
+      audience: ${JWT_AUDIENCE:chaosforge}
+  control-plane:
+    base-url: ${CONTROL_PLANE_URL:http://localhost:8081}
+
+management:
+  # SEC-04: actuator (incl. /prometheus) binds to a SEPARATE port, NOT the public 8080 ingress. The
+  # gateway is the sole internet-facing service; serving /actuator/prometheus on 8080 leaked CB states,
+  # the rate-limit fail_open counter (a live "limits are off — burst now" signal), policy-fallback
+  # counters, endpoint inventory, and JVM internals to any unauthenticated caller. 9080 is reached only
+  # over the private network (Prometheus scrape), never published to the internet / behind the LB.
+  server:
+    port: 9080
+  # trace_id/MDC correlation only — no exporter on the classpath (ADR-0505: no collector in lab).
+  tracing:
+    sampling:
+      probability: 1.0
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus     # never env/beans/heapdump/threaddump
+  metrics:
+    tags:
+      application: edge-gateway
+
+# Reactive Resilience4j on the upstream CP path. Per-instance config only — NO configs.default
+# (every boundary is explicit; architecture specifications: "no global defaults"). The 3s timeout is a Reactor
+# .timeout() (→ TimeoutException). 409 is NOT recorded — it passes through as non-fault.
+resilience4j:
+  circuitbreaker:
+    instances:
+      # Proxy path (replay / get) — latency-critical, user-facing. Operator order bulkhead → CB → timeout.
+      gateway-cp:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+        record-exceptions:
+          - io.chaosforge.gateway.client.UpstreamUnavailableException
+          - java.util.concurrent.TimeoutException
+      # Tenant-policy cache loader — fail-open (default policy on open); records any CP failure.
+      cache-load:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      gateway-cp:
+        max-concurrent-calls: 64
+        max-wait-duration: 0       # fail fast → BulkheadFullException → 503 (no queueing)

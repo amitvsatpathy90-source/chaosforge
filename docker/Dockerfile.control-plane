@@ -1,0 +1,24 @@
+# Multi-stage, self-contained (no host JDK/Gradle needed) — mirrors RPE's per-service Dockerfile
+# pattern; pinned bases, no :latest. Build context is the REPO ROOT (multi-module: control-plane
+# depends on chaosforge-common + chaosforge-avro-schemas):
+#   docker build -f docker/Dockerfile.control-plane -t chaosforge/control-plane:<git-sha> .
+FROM eclipse-temurin:21.0.7_6-jdk AS build
+WORKDIR /build
+COPY . .
+# bootJar only (skip tests here — CI runs `./gradlew check` as its own gate before any image build)
+RUN ./gradlew -q --no-daemon :control-plane:bootJar -x test \
+    # Boot's Gradle plugin emits both the boot jar and a -plain.jar; COPY globs can't exclude, so
+    # pick the runnable one explicitly here.
+    && find control-plane/build/libs -name '*.jar' ! -name '*-plain.jar' -exec cp {} /app.jar \;
+
+FROM eclipse-temurin:21.0.7_6-jre
+# Non-root runtime (SEC-02): a JVM/deserialization RCE must not inherit root in-container. Fixed uid/gid
+# so a K8s runAsNonRoot/runAsUser can pin it. temurin (Ubuntu-based) ships groupadd/useradd.
+RUN groupadd --system --gid 1001 chaosforge \
+ && useradd --system --uid 1001 --gid chaosforge --no-create-home --shell /usr/sbin/nologin chaosforge
+WORKDIR /app
+COPY --from=build --chown=chaosforge:chaosforge /app.jar app.jar
+USER chaosforge
+EXPOSE 8081
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75"
+ENTRYPOINT ["java", "-jar", "app.jar"]

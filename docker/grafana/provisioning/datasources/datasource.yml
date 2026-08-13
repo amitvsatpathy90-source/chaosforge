@@ -1,0 +1,11 @@
+# Auto-provisioned Prometheus datasource (Grafana 11). Reachable on the compose network by service
+# name. uid is stable so the SLI dashboard can reference it.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: chaosforge-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

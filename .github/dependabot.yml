@@ -1,0 +1,35 @@
+# Dependabot — dependency + action update PRs. Free (GitHub-hosted).
+#
+# NOTE on Docker: images are docker/Dockerfile.{edge-gateway,control-plane,execution-service} — the
+# `Dockerfile.<name>` form is NOT matched by Dependabot's docker ecosystem (it matches only exact
+# `Dockerfile` / `*.dockerfile`), so a docker entry would be a silent no-op. Base-image bumps for
+# those files are manual until renamed to `*.dockerfile`. Flagged, not shipped as dead config.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Gradle version catalog (gradle/libs.versions.toml) + build scripts. The C29 avro schema gate and
+  # the full test suite run in CI, so a bump PR is validated by `./gradlew check` before merge.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Spring Boot / Spring AI move as a BOM-aligned set (settings.gradle.kts pins Boot 4.1); group
+      # them so a partial bump can't skew the BOM and break the build.
+      spring:
+        patterns:
+          - "org.springframework*"
+          - "io.spring*"
+      other:
+        patterns: ["*"]
+        exclude-patterns:
+          - "org.springframework*"
+          - "io.spring*"

@@ -1,0 +1,14 @@
+# Dev-only flags (build-prompt §49). BlockHound / Reactor Debug Agent are not applicable to the CP
+# (MVC, not reactive). The CP runs JDBC on the request virtual thread (architecture specifications "option 1"), so
+# virtual-thread pinning is the thing to watch here. Two complementary tools:
+#   - Ad-hoc, at bootRun: -Djdk.tracePinnedThreads=full prints a stack whenever a pin blocks a carrier
+#     (already on every Test task in the root build; add it to bootRun JVM args for manual runs).
+#   - Automated, in CI: VirtualThreadJdbcPinningIT drives a 64-VT row-lock + pool-starvation workload
+#     through the real PgJDBC + Hikari stack and asserts ZERO jdk.VirtualThreadPinned JFR events
+#     (with a negative-control test proving the recorder can see a deliberate pin). This is the proof
+#     that option 1 is safe on JDK 21 — no dedicated jdbcExecutor needed. (There is no
+#     `jvm.threads.virtual.pinned` Micrometer gauge; pinning is a JFR signal, not a meter.)
+logging:
+  level:
+    org.springframework.jdbc.core.JdbcTemplate: DEBUG
+    io.chaosforge: DEBUG

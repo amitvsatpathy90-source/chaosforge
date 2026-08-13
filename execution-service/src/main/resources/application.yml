@@ -1,0 +1,193 @@
+server:
+  port: 8082
+  # NOTE (mtls-rules.md): mTLS is mandatory outside the lab (client-auth: need). Left off for dev/tests.
+
+spring:
+  application:
+    name: execution-service
+  threads:
+    virtual:
+      enabled: true
+  task:
+    scheduling:
+      # @Scheduled jobs run here: outbox hot poll(), the outbox straggler lane, partition maintain(),
+      # and the INCOMPLETE-run sweep(). Default pool size is 1 — a stalled poll() (broker down) would
+      # starve the sweep (the Defect-A liveness net). Give each headroom so they cannot block one another.
+      pool:
+        size: 5
+  datasource:
+    # Credentials/URL are env-var-driven (secure "env vars only" posture); the defaults after ':' are
+    # the local Compose-dev fallback only — override in any deployed profile via env/mounted secrets.
+    # Deliberately NOT fail-fast like the mTLS bundle passwords below: this DB is never internet-facing
+    # (Compose-local/lab only), so a silent dev default is an acceptable asymmetry, not an oversight.
+    url: ${EXEC_DB_URL:jdbc:postgresql://localhost:5432/chaosforge_exec}
+    username: ${DB_USERNAME:chaosforge}
+    password: ${DB_PASSWORD:chaosforge}
+    hikari:
+      maximum-pool-size: 20
+      # Bound every DB interaction so a Postgres outage / network partition can NEVER hang a consumer
+      # thread past max.poll.interval.ms (acceptance gate C19). connectionTimeout: fail fast acquiring a
+      # connection; socketTimeout: a read on an established connection that stops responding (a
+      # partition) aborts at 30s; statement_timeout: the server kills a runaway statement. All ≪ the 5m
+      # poll interval, so a hung DB op surfaces as a bounded failure (→ DLQ INFRA_TRANSIENT), never a
+      # silent stall that triggers a rebalance storm.
+      connection-timeout: 5000
+      # TIME ZONE 'UTC': partition day-boundaries are `day::timestamptz`, interpreted in the SESSION tz;
+      # PartitionMaintenance computes day-keys with LocalDate.now(UTC). Pin the session tz so they agree —
+      # otherwise drop-old can evict rows still inside the 7-day inbox dedup window (arch-audit 2.6).
+      connection-init-sql: "SET TIME ZONE 'UTC'; SET statement_timeout = '30s'"
+      data-source-properties:
+        socketTimeout: 30
+        connectTimeout: 5
+  flyway:
+    enabled: true                # Boot runs migrations at startup; a bad migration fails the boot (ADR-0530)
+    locations: classpath:db/migration
+    clean-disabled: true         # prod safety: `flyway clean` must never be able to wipe the schema
+    validate-on-migrate: true    # checksum-validate every applied migration on each boot
+  sql:
+    init:
+      mode: never
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    # GAP-04: fail context startup if KafkaAdmin can't reconcile the declared topics (KafkaTopicsConfig)
+    # at boot. Default is false (log-only), which on a hardened broker with auto.create.topics.enable=off
+    # would let the consumer start against non-existent command/DLQ topics.
+    admin:
+      fail-fast: true
+    consumer:
+      group-id: execution-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
+
+chaosforge:
+  # Deployment posture marker (arch-audit F2), asserted by DeploymentPostureGuard at startup.
+  #   lab      — permissive; plain HTTP, plaintext leg to the CP, SSRF guard inert. The DEFAULT, because no
+  #              test here uses @ActiveProfiles (all run on the default profile), so a fail-closed default
+  #              would fail the whole suite.
+  #   deployed — asserts the posture is real: mTLS (client-auth=need), a client cert + https:// to the CP,
+  #              and a non-empty chaosforge.target.allowed-hosts. Otherwise the context refuses to refresh,
+  #              the port never opens and no @KafkaListener starts. Set CHAOSFORGE_DEPLOYMENT=deployed in
+  #              every non-lab artifact.
+  # A marker cannot cover its own omission — that residual is carried by the chaosforge.security.hardened
+  # gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
+  deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
+  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # iss is an exact-string match, aud must contain this value. Lab defaults match what
+  # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:http://localhost:9000}
+      audience: ${JWT_AUDIENCE:chaosforge}
+  control-plane:
+    base-url: ${CONTROL_PLANE_URL:http://localhost:8081}
+  kafka:
+    command-topic: chaosforge.scenario.commands.v1
+  step:
+    connect-timeout-ms: 2000
+    read-timeout-ms: 30000
+    aggregate-timeout-ms: 240000     # 4m, bounded below max.poll.interval.ms (5m)
+  # Steady-state hypothesis (C20): between fault steps, probe the target's health endpoint; sustained
+  # breach → auto-abort the run (ABORTED). health-path is appended to the target's <scheme>://<authority>.
+  steady-state:
+    enabled: true
+    max-consecutive-failures: 3      # tolerate transient blips; abort only on sustained degradation
+    health-path: /health
+    # Time-based cadence (ADR-0533): probes within a boundary are spaced this far apart, so a scenario
+    # with fewer steps than max-consecutive-failures can still accrue enough samples to abort. Breach
+    # window ≈ (max-consecutive-failures - 1) × this; keep it well below aggregate-timeout-ms (4m).
+    probe-interval-ms: 1000
+    # Dedicated probe timeouts (arch-audit M1) — SHORT, never the 30s step read-timeout. A health probe
+    # must resolve fast: the probe loop runs inside the aggregate deadline, and a connected-but-slow
+    # target across several hosts must not overshoot it far enough to breach max.poll.interval.ms.
+    probe-connect-timeout-ms: 1000
+    probe-read-timeout-ms: 2000
+  # Result-event outbox relay (Defect B) — ships ADR-0523 Phase-3 rows to Kafka. Mirrors the CP relay.
+  outbox:
+    poll-interval-ms: 1000
+    batch-size: 64
+    max-attempts: 8                # record-FATAL rows crossing this are quarantined as DEAD (alert, not
+                                   # DLQ). Broker-global failures never DEAD — they back off at the cap
+                                   # under the relay-lag alerts (an outage must not force manual repair).
+    lease-seconds: 30              # visibility timeout > send-timeout-ms
+    send-timeout-ms: 10000         # ONE shared harvest deadline per pipelined batch (not per record)
+    base-backoff-seconds: 2
+    cap-backoff-seconds: 300
+    # Hot-lane claim bound (plan-shape guardrail): MUST stay well below the partition-drop age. Rows
+    # older than this are picked up by the slow straggler lane — no PENDING row is ever unreachable
+    # before its partition drops.
+    claim-window-days: 2
+    straggler-poll-interval-ms: 300000
+    straggler-batch-size: 16
+    # NOTE (GAP-05): inbox/outbox retention is governed by chaosforge.partition.{inbox,outbox}-retention-days
+    # (partition-drop, C28). The former chaosforge.outbox.{retention-days,purge-cron} keys here were dead
+    # — read by no code — and misstated retention to on-call, so they were removed.
+  # INCOMPLETE-run sweep (Defect A) — marks runs stuck by a Phase-2->3 crash. Threshold MUST exceed
+  # max.poll.interval.ms (5m) so an in-flight run is never swept.
+  run:
+    sweep:
+      interval-ms: 60000
+      incomplete-after-seconds: 360   # 300s (max.poll.interval.ms) + 60s grace
+  # SSRF / blast-radius guard on every scenario target the executor calls (arch-audit HIGH-2). OFF here
+  # so dev/tests/local-Compose can target localhost; a deployed profile MUST enable it and pin the
+  # allowlist to the sanctioned system(s) under test — see application-mtls.yml + target-validation-rules.md.
+  target:
+    block-private-networks: ${TARGET_BLOCK_PRIVATE:false}   # true → reject localhost/metadata/RFC1918
+    allowed-hosts: ${TARGET_ALLOWED_HOSTS:}                  # empty = any public host; set = hard ceiling
+  # DLQ retry consumer (dlq-rules.md, ADR-0529): a SEPARATE group that republishes ONLY the replayable
+  # reasons (INFRA_TRANSIENT, STEP_TIMEOUT) to the main topic with a FRESH message_id + exponential
+  # backoff and full jitter. cap-backoff is bounded well below max.poll.interval.ms (5m) so the repair
+  # lane never sleeps long enough to trigger a rebalance.
+  dlq:
+    retry:
+      group-id: dlq-retry
+      max-attempts: 5
+      base-backoff-ms: 1000
+      cap-backoff-ms: 30000
+
+management:
+  # trace_id/MDC correlation only — no exporter on the classpath (ADR-0505: no collector in lab).
+  tracing:
+    sampling:
+      probability: 1.0
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: execution-service
+
+# Per-instance config only — NO configs.default (every outbound boundary is explicit; "no global
+# defaults"). Per-call timeout is the RestClient connect/read timeout (HttpClientConfig); R4j
+# TimeLimiter is not used on the blocking virtual-thread path. The aggregate step timeout (4m, below
+# max.poll.interval.ms) is enforced by the ExecutePhase deadline, not a TimeLimiter.
+resilience4j:
+  circuitbreaker:
+    instances:
+      # Outbound step calls to scenario targets.
+      target-call:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+        # Semantic step failures (bad URL/method) are not infra faults — they must NOT open the CB.
+        # Only target-unreachable / 5xx (RestClientException) count toward the failure rate.
+        ignore-exceptions:
+          - io.chaosforge.execution.dlq.DlqRoutableException
+      # Rule-set fetch from the Control Plane (pinned id+version; ADR-0503).
+      control-plane-call:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      target-call:
+        max-concurrent-calls: 50
+      control-plane-call:
+        max-concurrent-calls: 20

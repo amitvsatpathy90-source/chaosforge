@@ -1,0 +1,72 @@
+# Build
+.gradle/
+build/
+**/build/
+out/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
+
+# Logs / local scratch
+*.log
+logs/
+
+# AI-instruction files — PRIVATE to this portfolio project, never published to the public
+# repo (they're uploaded to the chat knowledge base for AI context instead). Covers the whole
+# .claude/ dir (rules + local settings) and the CLAUDE.md context file.
+.claude/
+CLAUDE.md
+
+# Environment files — real values never committed; .env.example is the tracked contract
+.env
+.env.*
+!.env.example
+
+# Credentials / secrets / PII — generic catch-all beyond the mTLS-specific block below.
+# Never commit private keys, tokens, or cloud/CI credential files.
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+id_rsa*
+id_ed25519*
+*.token
+secrets.yml
+secrets.yaml
+secrets.json
+credentials.json
+.netrc
+.npmrc
+.pgpass
+
+# Re-include committed test certs (cert-only, no private key) past the *.pem glob —
+# InternalMtlsAuthorizationIT loads them from the test classpath; without this the
+# fresh-clone ./gradlew check fails on a missing resource.
+!control-plane/src/test/resources/certs/*.pem
+
+# mTLS material — NEVER commit private keys, keystores, or CA material (mtls-rules.md, ADR-0531).
+# Regenerate locally with docker/mtls/generate-certs.sh. Passwords come from env vars, not files.
+docker/mtls/certs/
+*.p12
+*.jks
+*-key.pem
+ca-cert.pem
+ca-cert.srl
+
+# Lab JWKS stub material — same posture: script versioned, output regenerable, signing key never
+# committed (docker/jwks/generate-jwks.sh). public/ holds only the public JWK Set but is derived,
+# so it is ignored too.
+docker/jwks/keys/
+docker/jwks/public/

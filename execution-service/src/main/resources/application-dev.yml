@@ -1,0 +1,11 @@
+# Dev-only flags (build-prompt §49). Surface virtual-thread pinning via the bootRun JVM arg:
+#   -Djdk.tracePinnedThreads=full   (already on every Test task in the root build)
+# Note: the @KafkaListener pipeline — where this service does its JDBC (fence/inbox/outbox) — runs on
+# the listener container's PLATFORM threads, not virtual threads, so VT-pinning does not apply to the
+# hot path by construction (this is the same mitigation as "option 2", scoped to the Kafka consumer).
+# The automated zero-pinning proof for JDBC-on-a-virtual-thread lives in the Control Plane
+# (VirtualThreadJdbcPinningIT), which is the service that actually runs JDBC on request VTs.
+logging:
+  level:
+    io.chaosforge: DEBUG
+    org.springframework.kafka: INFO

@@ -1,0 +1,40 @@
+# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+#
+# The Edge Gateway is the SOLE PUBLIC INGRESS. Its own server-side TLS faces the internet and would use
+# a PUBLIC cert — out of scope for the internal mesh and left on HTTP in the lab. On the INTRA-service
+# hop the gateway is a CLIENT: every call to the Control Plane (ControlPlaneClient → controlPlaneWebClient)
+# presents the internal-CA client cert. Setting `chaosforge.mtls.client-bundle` switches the reactive
+# (Netty) connector onto mTLS; absent it, the gateway talks plain HTTP (dev/tests). A configured-but-
+# missing bundle fails fast — we never silently downgrade to an unauthenticated channel.
+#
+# Secrets posture: passwords from env (no default → fail fast); only lab file locations have defaults.
+spring:
+  ssl:
+    bundle:
+      jks:
+        internal-mtls:
+          key:
+            alias: edge-gateway
+          keystore:
+            location: ${MTLS_KEYSTORE:file:./docker/mtls/certs/edge-gateway-keystore.p12}
+            password: ${MTLS_KEYSTORE_PASSWORD}
+            type: PKCS12
+          truststore:
+            location: ${MTLS_TRUSTSTORE:file:./docker/mtls/certs/truststore.p12}
+            password: ${MTLS_TRUSTSTORE_PASSWORD}
+            type: PKCS12
+
+chaosforge:
+  mtls:
+    client-bundle: internal-mtls
+  control-plane:
+    base-url: ${CONTROL_PLANE_URL:https://localhost:8081}   # CP serves HTTPS under the mtls profile
+
+# SRE-01: the deployed artifact always runs this profile (DeploymentPostureGuard requires it under
+# CHAOSFORGE_DEPLOYMENT=deployed), so it emits ECS-JSON console logs — trace_id/span_id (Micrometer Brave
+# MDC) and structured fields become first-class, log-pipeline-queryable, not interpolated into free text.
+# Dev/tests/local run the default profile and keep the human-readable pattern. Boot 4 native, no new dep.
+logging:
+  structured:
+    format:
+      console: ecs

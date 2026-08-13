@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "All versions live in gradle/libs.versions.toml (single source of truth — no intra-repo drift possible, so no drift gate needed here). Renovate's value in this repo is prompt upgrade PRs, which also shrinks the cross-repo divergence window with revenue-protection-engine (the resilience4j boot3/boot4 split class of drift).",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Batch patch+minor into one weekly PR — one-operator review load",
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "non-major dependencies",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Majors stay individual PRs — the version catalog's VERIFY-BEFORE-BUILD discipline applies",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

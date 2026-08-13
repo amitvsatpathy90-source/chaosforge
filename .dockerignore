@@ -1,0 +1,30 @@
+# Build context is the repo root (docker/Dockerfile.* use `COPY . .`; the Gradle reactor
+# needs settings.gradle.kts + chaosforge-common + chaosforge-avro-schemas, so the context
+# can't be narrowed — this file scopes it instead). Keeps rebuilt output, gitignored key
+# material, and private AI-instruction files out of the build stage + BuildKit cache.
+
+# Rebuilt inside the image
+build/
+**/build/
+.gradle/
+out/
+
+# Secret / key material (gitignore does NOT apply to Docker context)
+.env
+.env.*
+!.env.example
+docker/mtls/certs/
+docker/jwks/keys/
+**/src/test/resources/certs/
+*.p12
+*.jks
+
+# Private AI-instruction files
+.claude/
+CLAUDE.md
+
+# Not needed for a bootJar
+docs/
+.github/
+*.md
+**/.DS_Store
