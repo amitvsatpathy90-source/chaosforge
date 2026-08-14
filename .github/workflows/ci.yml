@@ -81,6 +81,14 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4 # wrapper-aware caching
       - run: ./gradlew check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 7      
 
   push-images:
     # Images only from main (or a deliberate manual run) — a PR build must never publish.

@@ -28,5 +28,12 @@ subprojects {
         useJUnitPlatform()
         // Surface virtual-thread pinning during tests (architecture specifications JDBC threading; test asserts pinned == 0)
         jvmArgs("-Djdk.tracePinnedThreads=full")
+
+        testLogging {
+            events("failed", "skipped")           // not "passed" to keep signal-to-noise sane on 100+ tests
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showCauses = true
+            showStackTraces = true
+        }
     }
 }
