@@ -22,7 +22,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = {
                 "spring.kafka.bootstrap-servers=localhost:9092",
-                "spring.kafka.listener.auto-startup=false"   // no broker here — Flyway is what we test
+                "spring.kafka.listener.auto-startup=false",   // no broker here — Flyway is what we test
+                "spring.kafka.admin.auto-create=false"       // KafkaAdmin still probes broker at startup regardless of listener setting
         })
 @Testcontainers
 class FlywaySchemaMigrationIT {
