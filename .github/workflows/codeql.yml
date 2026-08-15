@@ -38,6 +38,6 @@ jobs:
       # compileJava depends on avroGenerateJava (Avro plugin hooks compile automatically),
       # so generated Avro codegen is indexed by CodeQL too — no separate codegen step.
       - name: Build all services
-        run: ./gradlew compileJava compileTestJava -x test --no-daemon
+        run: ./gradlew clean compileJava compileTestJava -x test --no-daemon --rerun-tasks
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
