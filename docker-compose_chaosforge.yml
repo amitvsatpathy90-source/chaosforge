@@ -1,6 +1,6 @@
 # ChaosForge local lab topology. Pinned tags, healthchecks, mem_limit on every service.
 # Total mem_limit budget ≈ 1912 MB (< 2 GB cap, per build-prompt).
-#   postgres 256 + redpanda 600 + apicurio 384 + redis 128 + prometheus 256 + grafana 256
+# postgres 256 + redpanda 600 + apicurio 384 + redis 128 + prometheus 256 + grafana 256
 # Ollama is INTENTIONALLY excluded from the 2 GB budget — it alone exceeds it. Run it host-local,
 # or opt in with `--profile ai` (see the commented service at the bottom). The AI path is the last
 # build step and is not required for the Gateway→CP→Kafka→Exec E2E hard cut.
@@ -113,7 +113,7 @@ services:
 
   # Lab IdP stub (ADR-0524): serves the static JWKS that all three services' JWK_SET_URI default
   # points at (http://localhost:9000/.well-known/jwks.json). One-time key generation:
-  #   docker/jwks/generate-jwks.sh     (output git-ignored; mint test JWTs with docker/jwks/mint-jwt.sh)
+  # docker/jwks/generate-jwks.sh     (output git-ignored; mint test JWTs with docker/jwks/mint-jwt.sh)
   # Only docker/jwks/public/ is mounted — the signing key in docker/jwks/keys/ must never be served.
   # The healthcheck fetches the JWKS itself, so "healthy" <=> the key material is actually present.
   jwks-stub:
