@@ -79,7 +79,9 @@ services:
     image: apicurio/apicurio-registry:3.0.6
     container_name: chaosforge-apicurio
     environment:
-      APICURIO_STORAGE_KIND: mem        # in-memory (lab). HA/SQL storage required before CP scales (architecture specifications).
+      # APICURIO_STORAGE_KIND intentionally unset — omitting it selects in-memory storage in 3.x.
+      # HA/SQL storage required before CP scales (architecture specifications).
+      # Choices are sql (PostgreSQL/MySQL), kafkasql (Kafka), gitops (Git repo), or kubernetesops (K8s ConfigMaps).
       QUARKUS_HTTP_PORT: "8080"
     ports:
       - "8086:8080"                     # Registry v3 API base: http://localhost:8086/apis/registry/v3
