@@ -1,4 +1,4 @@
-# ChaosForge
+# ChaosForge (CF)
 
 A multi-tenant chaos-engineering / API-resilience control plane, built as a **proof-of-capability
 artifact**. The point is not the feature set — it is that every hard distributed-systems decision is
