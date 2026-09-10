@@ -1,8 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "All versions live in gradle/libs.versions.toml (single source of truth — no intra-repo drift possible, so no drift gate needed here). Renovate's value in this repo is prompt upgrade PRs, which also shrinks the cross-repo divergence window with revenue-protection-engine (the resilience4j boot3/boot4 split class of drift).",
+  "description": "All versions live in gradle/libs.versions.toml (single source of truth — no intra-repo drift possible, so no drift gate needed here).",
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
+  "enabledManagers": ["gradle", "github-actions", "dockerfile"],
   "packageRules": [
     {
       "description": "Batch patch+minor into one weekly PR — one-operator review load",
