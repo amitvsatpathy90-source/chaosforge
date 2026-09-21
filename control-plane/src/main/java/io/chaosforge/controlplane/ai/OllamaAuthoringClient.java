@@ -55,7 +55,7 @@ public class OllamaAuthoringClient {
                 .entity(ScenarioDraft.class);   // BeanOutputConverter; validated by the service
     }
 
-    /** CB open / bulkhead full / model call failed. No auto re-prompt (ai-rules.md). */
+    /** CB open / bulkhead full / model call failed. No automatic re-prompt; author manually. */
     @SuppressWarnings("unused")
     private ScenarioDraft fallback(ScenarioDraftRequest request, Throwable t) {
         log.warn("AI authoring unavailable: {}", t.toString());   // never the prompt

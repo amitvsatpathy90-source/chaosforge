@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Read-only advisory DLQ triage (ADR-0518 surface 2; ai-rules.md Tier 2). GET only — this endpoint
+ * Read-only advisory DLQ triage (ADR-0518 surface 2). GET only — this endpoint
  * can never replay, ack, or mutate anything.
  *
  * <p><b>OPERATOR-gated</b> (SecurityConfig): DLQ records span all tenants, so a plain tenant token

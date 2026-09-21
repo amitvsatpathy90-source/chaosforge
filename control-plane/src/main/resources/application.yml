@@ -145,7 +145,7 @@ chaosforge:
 
 # Per-instance config only — NO configs.default. The Ollama authoring boundary (the only outbound
 # boundary in the CP) wired with CB + bulkhead. Timeout is bounded by the Ollama client, not R4j
-# TimeLimiter (blocking VT path; local CPU inference is intentionally slow — ai-rules.md).
+# TimeLimiter (blocking VT path; local CPU inference is intentionally slow).
 resilience4j:
   circuitbreaker:
     instances:
@@ -160,7 +160,7 @@ resilience4j:
   bulkhead:
     instances:
       ollama-chat:
-        max-concurrent-calls: 4       # LLM calls are slow; don't queue 100 VTs (ai-rules.md)
+        max-concurrent-calls: 4       # LLM calls are slow; don't queue 100 VTs
 
 management:
   # trace_id/MDC correlation only — sample everything so every request log carries a trace_id.

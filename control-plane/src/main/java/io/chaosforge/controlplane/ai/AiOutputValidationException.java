@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 
 /**
  * The LLM draft failed the Bean Validation schema gate (ADR-0518). Mapped to {@code HTTP 422}. The
- * message lists violated <b>property paths only</b> — never field values (PII rule, ai-rules.md).
+ * message lists violated <b>property paths only</b> — never field values (PII rule, ADR-0519).
  */
 public class AiOutputValidationException extends RuntimeException {
     public AiOutputValidationException(Set<? extends ConstraintViolation<?>> violations) {

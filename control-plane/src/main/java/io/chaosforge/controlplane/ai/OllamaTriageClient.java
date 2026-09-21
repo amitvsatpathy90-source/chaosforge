@@ -13,7 +13,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Ollama DLQ-triage boundary (ai-rules.md Tier 2 — advisory only). Own bean so reader faults
+ * Ollama DLQ-triage boundary (ADR-0518 surface 2 — advisory only). Own bean so reader faults
  * (400/404) never count against the shared ollama-chat CB. Prompt built only from redacted
  * {@link DlqEnvelope} fields (ADR-0519); exceptionSummary is attacker-influenceable free text
  * (GAP-06) so it's sanitized via {@link PromptSanitizer} before the user() slot.

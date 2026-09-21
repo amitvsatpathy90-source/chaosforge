@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * OPERATOR-gated write surface for the DLQ human-triage watermark (ADR-0542) — <b>the one stateful
  * corner of DLQ triage</b>. It is kept deliberately off the read-only {@code DlqTriageService} /
- * {@code DlqRecordReader} (ai-rules.md, ADR-0518): the LLM advisory path stays strictly read-only, so
+ * {@code DlqRecordReader} (ADR-0518): the LLM advisory path stays strictly read-only, so
  * "the AI never writes state" remains literally true; only this explicit operator verb mutates.
  *
  * <p>Advancing the watermark asserts "a human reviewed up to here", which lowers
