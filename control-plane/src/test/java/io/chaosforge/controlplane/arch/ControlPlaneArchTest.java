@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * Control Plane structural invariants (control-plane-rules.md). These are bytecode/source guards that
+ * Control Plane structural invariants. These are bytecode/source guards that
  * fail the build on regression — no infra needed.
  */
 class ControlPlaneArchTest {

@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * Execution Service structural invariants (execution-service-rules.md). The determinism boundary
+ * Execution Service structural invariants. The determinism boundary
  * (ADR-0518) is enforced here: no Spring AI on the replay/Kafka path.
  */
 class ExecutionServiceArchTest {

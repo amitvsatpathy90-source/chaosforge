@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * Edge Gateway structural invariants (gateway-rules.md). The Gateway is the only WebFlux service —
+ * Edge Gateway structural invariants. The Gateway is the only WebFlux service —
  * blocking calls and {@code ThreadLocal} (lost across reactive thread hops) are forbidden.
  */
 class GatewayRulesTest {
@@ -26,7 +26,7 @@ class GatewayRulesTest {
 
     @Test
     void noBlockingCalls() throws IOException {
-        // GAP-02: match .block() AND the variants gateway-rules.md explicitly forbids —
+        // GAP-02: match .block() AND the variants the gateway contract explicitly forbids —
         // .blockFirst() / .blockLast() / .blockOptional(). A bare ".block(" substring missed all three,
         // so a regression to any of them (real event-loop-blocking calls) passed CI silently.
         assertThat(mainSourcesMatching("\\.block(First|Last|Optional)?\\("))
@@ -36,7 +36,7 @@ class GatewayRulesTest {
 
     @Test
     void noRestTemplate() {
-        // All outbound HTTP uses WebClient (gateway-rules.md).
+        // All outbound HTTP uses WebClient (ADR-0500).
         noClasses().should().dependOnClassesThat()
                 .haveFullyQualifiedName("org.springframework.web.client.RestTemplate")
                 .because("the gateway uses WebClient, never RestTemplate")

@@ -34,7 +34,7 @@ spring:
     hikari:
       # Bounded CONNECTION pool — NOT a platform-thread pool; the earlier "bounded platform-thread JDBC
       # pool" wording conflated the two (arch-audit F1). This block is where the JDBC threading decision is
-      # recorded (control-plane-rules.md): JDBC runs directly on the request virtual thread — option 1,
+      # recorded (ADR-0500): JDBC runs directly on the request virtual thread — option 1,
       # "accept the pinning" — and there is no jdbcExecutor bean. It is safe because pinning measures ZERO:
       # PgJDBC + HikariCP use ReentrantLock, not synchronized, around blocking I/O, so the VT unmounts
       # cleanly on socket and pool waits. Pinned by VirtualThreadJdbcPinningIT; driver/pool are BOM-managed

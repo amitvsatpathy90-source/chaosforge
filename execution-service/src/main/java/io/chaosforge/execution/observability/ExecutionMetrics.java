@@ -4,7 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 /**
- * Execution-service SLIs (execution-service-rules.md §Observability, architecture specifications §SLIs). Counters only;
+ * Execution-service SLIs (architecture specifications §SLIs). Counters only;
  * <b>never</b> a {@code tenant_id} tag (cardinality bomb — tenant data lives on traces/logs). The
  * dimensions used here ({@code outcome}, {@code dlq_reason}, {@code topic}) are all low-cardinality.
  */
