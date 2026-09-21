@@ -46,7 +46,7 @@ public class DeploymentPostureGuard {
         if (allowedHosts.isBlank()) {
             // Empty allowlist means open mode; block-private-networks alone is not the ceiling.
             gaps.add("chaosforge.target.allowed-hosts empty — TargetUrlGuard is in open mode (any public "
-                    + "host passes), which target-validation-rules.md documents as not DNS-rebinding-proof");
+                    + "host passes), which ADR-0534 documents as not DNS-rebinding-proof");
         }
         this.hardened = gaps.isEmpty();
 
