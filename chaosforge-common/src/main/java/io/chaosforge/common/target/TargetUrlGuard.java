@@ -10,13 +10,17 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Single SSRF / blast-radius policy for every outbound scenario target (arch-audit HIGH-2, ADR-0534).
- * Shared by CP authoring and Exec execution so the rule is defined once. Scheme must be http/https.
- * Allowlist mode (non-empty allowedHosts) is the ceiling and overrides the private-network block —
- * an allowlisted private host (e.g. RPE ingress) is permitted. Open mode applies the coarse SSRF
- * guard (localhost, metadata host, private/link-local ranges) when blockPrivateNetworks is on.
- * Both knobs default off; deployed profiles must set them (target-validation-rules.md).
- * Rejection reasons are shape tokens only — never the URL.
+ * Shared SSRF / blast-radius policy for scenario target URLs (ADR-0534).
+ *
+ * <p>Used by Control Plane authoring and Execution Service validation so the target policy is
+ * defined in one place. Non-blank target URLs must use {@code http} or {@code https} and contain a host.
+ *
+ * <p>When {@code allowedHosts} is non-empty, it is the effective target ceiling and overrides the
+ * private-network block — an explicitly allowlisted private host (e.g. RPE ingress) is permitted.
+ * When the allowlist is empty, {@code blockPrivateNetworks} controls the coarse SSRF guard against
+ * localhost, the metadata host, and addresses that resolve to private or otherwise non-public ranges.
+ *
+ * <p>Rejection reasons are shape tokens only — never the URL value.
  */
 public final class TargetUrlGuard {
 
