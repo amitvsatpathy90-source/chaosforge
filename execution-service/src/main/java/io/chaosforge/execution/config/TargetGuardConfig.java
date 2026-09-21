@@ -7,10 +7,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Builds the {@link TargetUrlGuard} the executor applies to every pinned step target (arch-audit HIGH-2).
- * Off by default so dev/tests/local-Compose can target localhost; deployed profiles set
- * {@code chaosforge.target.block-private-networks=true} and populate {@code allowed-hosts}
- * (see {@code application-mtls.yml} and {@code target-validation-rules.md}).
+ * Builds the {@link TargetUrlGuard} applied to every pinned step target during execution (ADR-0534).
+ *
+ * <p>The guard is permissive by default for dev/tests/local Compose. Deployed profiles enable
+ * private-network blocking and pin {@code allowed-hosts}.
  */
 @Configuration
 public class TargetGuardConfig {

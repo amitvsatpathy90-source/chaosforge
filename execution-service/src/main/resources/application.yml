@@ -130,9 +130,9 @@ chaosforge:
     sweep:
       interval-ms: 60000
       incomplete-after-seconds: 360   # 300s (max.poll.interval.ms) + 60s grace
-  # SSRF / blast-radius guard on every scenario target the executor calls (arch-audit HIGH-2). OFF here
+  # SSRF / blast-radius guard on every scenario target the executor calls (ADR-0534). OFF here
   # so dev/tests/local-Compose can target localhost; a deployed profile MUST enable it and pin the
-  # allowlist to the sanctioned system(s) under test — see application-mtls.yml + target-validation-rules.md.
+  # allowlist to the sanctioned system(s) under test — see application-mtls.yml.
   target:
     block-private-networks: ${TARGET_BLOCK_PRIVATE:false}   # true → reject localhost/metadata/RFC1918
     allowed-hosts: ${TARGET_ALLOWED_HOSTS:}                  # empty = any public host; set = hard ceiling
