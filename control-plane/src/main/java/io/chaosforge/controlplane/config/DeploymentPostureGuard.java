@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Fail-fast + observable guard for this service's security posture (arch-audit F2, ADR-0541).
- * Asserts each control by its own property, not by profile name — see mtls-rules.md / ADR-0532.
+ * Asserts each control by its own property, not by profile name — see ADR-0541 / ADR-0532.
  * Fail-fast throws during bean init, before the port opens; the gauge covers a forgotten marker too.
  */
 @Configuration
@@ -32,11 +32,11 @@ public class DeploymentPostureGuard {
 
         List<String> gaps = new ArrayList<>();
         if (sslBundle.isBlank()) {
-            gaps.add("server.ssl.bundle unset — plain HTTP, no mTLS (mtls-rules.md)");
+            gaps.add("server.ssl.bundle unset — plain HTTP, no mTLS (ADR-0531)");
         }
         if (!"need".equalsIgnoreCase(clientAuth.trim())) {
             gaps.add("server.ssl.client-auth != need — a client cert is not mandatory ('want' is "
-                    + "explicitly forbidden by mtls-rules.md)");
+                    + "explicitly forbidden by ADR-0531)");
         }
         if (internalPeerCn.isBlank()) {
             gaps.add("chaosforge.mtls.internal-peer-cn unset — /internal is permitAll, so its "

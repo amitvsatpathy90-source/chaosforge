@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Intra-service endpoint for the Execution Service's rule-set loader. mTLS-gated (the lab runs it
- * open — see mtls-rules.md). Returns the pinned rule set's definition JSON (a step array) verbatim;
+ * open — see ADR-0531 and ADR-0532). Returns the pinned rule set's definition JSON (a step array) verbatim;
  * {@code tenantId} is the consumer's verified Avro tenant and scopes the read (404 if not owned).
  */
 @RestController

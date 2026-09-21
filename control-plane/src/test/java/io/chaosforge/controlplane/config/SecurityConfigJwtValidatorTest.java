@@ -9,7 +9,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
- * Claim-validator contract for the {@code jwtDecoder} bean (mtls-rules.md: signature, exp, iss,
+ * Claim-validator contract for the {@code jwtDecoder} bean (ADR-0524: signature, exp, iss,
  * aud). Signature verification is Nimbus's job and needs a live JWKS; these tests pin the CLAIM
  * layer: a signature-valid token minted by another issuer or for another relying party must still
  * be rejected (confused-deputy), and the default timestamp check must survive the customization.

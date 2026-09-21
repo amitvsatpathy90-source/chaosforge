@@ -46,7 +46,7 @@ class DeploymentPostureGuardTest {
 
     @Test
     void deployed_withClientAuthWant_refusesToStart() {
-        // mtls-rules.md forbids 'want' outright — a client cert must be mandatory, not optional.
+        // ADR-0531 forbids 'want' outright — a client cert must be mandatory, not optional.
         assertThatThrownBy(() -> guard("deployed", BUNDLE, "want", PEER_CN, HOSTS))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("client-auth != need");

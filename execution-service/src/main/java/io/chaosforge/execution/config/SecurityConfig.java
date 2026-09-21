@@ -21,7 +21,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * Secures the Execution Service's management/admin HTTP endpoints only (ADR-0524). Kafka consumer
- * tenant identity is the signed Avro payload, verified at step 1 (mtls-rules.md).
+ * tenant identity is the signed Avro payload, verified at step 1 (ADR-0524).
  * Authentication is not authorization (arch-audit M2): the kill switch (C19) is global, so it
  * requires the OPERATOR role, not just any authenticated tenant JWT.
  */

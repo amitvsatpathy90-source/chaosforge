@@ -23,7 +23,7 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
 /**
  * Spring Security 7 (Boot 4.1.x) — stateless resource server. The {@link JwtTenantExtractionFilter}
  * re-verifies the forwarded JWT and binds the tenant (ADR-0524). Intra-service mTLS is enforced at
- * the TLS layer via {@code server.ssl.bundle} (see mtls-rules.md) and is configured per-profile.
+ * the TLS layer via {@code server.ssl.bundle} (see ADR-0531) and is configured per-profile.
  */
 @Configuration
 @EnableMethodSecurity   // enables @PreAuthorize on tenant-scoped service methods (ADR-0509 Layer 2)

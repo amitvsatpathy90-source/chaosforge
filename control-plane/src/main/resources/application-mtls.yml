@@ -1,4 +1,4 @@
-# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+# mTLS profile (ADR-0531). Activate with: --spring.profiles.active=mtls
 #
 # The Control Plane is a SERVER on the intra-service mesh: it accepts inbound from the Edge Gateway
 # (replay / get) AND from the Execution Service (rule-set load). Both must present a client certificate
@@ -11,7 +11,7 @@
 server:
   ssl:
     bundle: internal-mtls
-    client-auth: need          # mandatory client cert — not "want" (mtls-rules.md forbids "want")
+    client-auth: need          # mandatory client cert — not "want" (ADR-0531 forbids "want")
 
 spring:
   ssl:

@@ -1,6 +1,6 @@
 server:
   port: 8081
-  # NOTE (mtls-rules.md): intra-service mTLS is MANDATORY outside the lab. Enable the internal-CA
+  # NOTE (ADR-0531): intra-service mTLS is MANDATORY outside the lab. Enable the internal-CA
   # bundle in the deployed profile (client-auth: need). Left off here so dev/tests run on plain HTTP:
   #   ssl:
   #     bundle: internal-mtls
@@ -88,7 +88,7 @@ chaosforge:
   # A marker cannot cover its own omission — that residual is carried by the
   # chaosforge.security.mtls_active gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
   deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
-  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # JWT claim validation on top of signature+exp (ADR-0524 contract: signature, exp, iss, aud):
   # iss is an exact-string match, aud must contain this value. Lab defaults match what
   # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
   security:

@@ -1,7 +1,7 @@
 # ChaosForge — mTLS & Internal CA Design
 
-Authoritative rules: `.architecture specifications/rules/mtls-rules.md`. Decisions: ADR-0524 (tenant identity provenance),
-ADR-0531 (mTLS bundle wiring). This doc is the operational/topology companion.
+Source-of-truth decisions: ADR-0524 (tenant identity provenance), ADR-0531 (mTLS bundle wiring).
+This doc is the operational/topology companion.
 
 ---
 
@@ -67,7 +67,7 @@ mTLS is enabled by the **`mtls` Spring profile** so dev/tests stay on plain HTTP
 server:
   ssl:
     bundle: internal-mtls
-    client-auth: need          # mandatory — "want" is forbidden (mtls-rules.md)
+    client-auth: need          # mandatory — "want" is forbidden (ADR-0531)
 spring:
   ssl:
     bundle:

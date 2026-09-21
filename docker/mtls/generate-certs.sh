@@ -11,7 +11,7 @@
 # (see each service's application-mtls.yml). The bundle name is `internal-mtls` everywhere; only the
 # keystore path + key alias differ per service.
 #
-# SECURITY POSTURE (mtls-rules.md, ADR-0531):
+# SECURITY POSTURE (ADR-0531):
 #   - Passwords come from env vars; they are NOT written into any yaml or source file.
 #   - The generated certs/keys are git-ignored (see .gitignore). They are throwaway LAB material.
 #   - Rotation is MANUAL in the lab — re-run this script and restart the services. Automate before
@@ -49,7 +49,7 @@ for svc in "${SERVICES[@]}"; do
   # serverAuth + clientAuth: the same identity is presented inbound (CP/Exec server) and outbound
   # (Gateway/Exec client). SANs cover bootRun (localhost), docker-compose (service DNS name), AND the
   # AWS ECS Cloud Map name (<svc>.chaosforge.internal — chaosforge-infra). Without the Cloud Map SAN,
-  # the AWS deployment's mTLS handshake fails hostname verification (mtls-design.md §8: "new topology
+  # the AWS deployment's mTLS handshake fails hostname verification (docs/chaosforge-mtls-design.md §8: "new topology
   # needs a regen" — this IS that regen, made additive so one material set serves all three topologies).
   openssl x509 -req -in "${svc}.csr" -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial \
     -days "$SVC_DAYS" -sha256 -out "${svc}-cert.pem" \
