@@ -8,15 +8,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Validates that LLM-proposed target URLs are safe for a tenant to call (ai-rules.md — "the real
- * security control"; the LLM output is untrusted). Delegates to the shared {@link TargetUrlGuard} so the
- * AI path enforces the identical SSRF policy as rule-set authoring and execution (arch-audit HIGH-2).
- * The AI path <b>always</b> blocks private networks (an LLM must never be trusted to propose an internal
- * host), independent of the deployment-wide {@code chaosforge.target.*} toggle; it additionally honours
- * the {@code chaosforge.ai.allowed-target-hosts} allowlist.
- * <p><b>Deferred:</b> per-tenant target ownership backed by a {@code tenant_targets} table. There is
- * no such table yet, so {@code tenantId} is the contract seam but not yet a data-backed predicate.
- * Violation messages carry a shape token only, never the URL value (PII rule).
+ * Validates target URLs proposed by the LLM before they can be used for a tenant.
+ *
+ * <p>The LLM output is untrusted, so this path delegates to the shared {@link TargetUrlGuard}
+ * so the AI path uses the same SSRF policy implementation as rule-set authoring and execution
+ * (ADR-0534).
+ *
+ * <p>The AI path always enables private-network blocking, independent of the deployment-wide
+ * {@code chaosforge.target.*} setting. When {@code chaosforge.ai.allowed-target-hosts} is non-empty,
+ * that allowlist is the effective target ceiling and may explicitly permit a private host.
+ *
+ * <p><b>Deferred:</b> per-tenant target ownership backed by a future {@code tenant_targets} table.
+ * Until that table exists, {@code tenantId} is retained as the seam for the future tenant-specific
+ * ownership check; it is not used in the current validation (ADR-0534).
+ *
+ * <p>Validation failures expose only a shape token through
+ * {@link TargetNotAllowedException#reason()}, never the URL value.
  */
 @Component
 public class TenantTargetValidator {
