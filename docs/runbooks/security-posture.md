@@ -73,7 +73,7 @@ Cross-tenant data exposure is the realistic worst case. Treat as a security inci
 - **Do not set `chaosforge.deployment=lab`** to get past a startup failure. That converts a loud, correct
   refusal back into the silent insecure start this whole mechanism exists to eliminate.
 - **Do not** "fix" an SSRF-allowlist failure by setting `chaosforge.target.block-private-networks=false`.
-  That is explicitly forbidden by `target-validation-rules.md`; the allowlist is the ceiling.
+  The allowlist is the effective target ceiling (ADR-0534).
 
 ## Known limits of this signal
 
