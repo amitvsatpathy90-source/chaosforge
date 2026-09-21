@@ -5,7 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Pure decision core for the DLQ retry consumer (dlq-rules.md) — no Kafka, no sleep, no I/O, so it is
+ * Pure decision core for the DLQ retry consumer (ADR-0529) — no Kafka, no sleep, no I/O, so it is
  * exhaustively unit-testable. Only {@code INFRA_TRANSIENT} and {@code STEP_TIMEOUT} are replayable;
  * widening this set requires an ADR (replay safety rests on step-level idempotency — ADR-0529). The
  * three hard-poison reasons and {@code RETRY_EXHAUSTED} are terminal and never republished.

@@ -136,7 +136,7 @@ chaosforge:
   target:
     block-private-networks: ${TARGET_BLOCK_PRIVATE:false}   # true → reject localhost/metadata/RFC1918
     allowed-hosts: ${TARGET_ALLOWED_HOSTS:}                  # empty = any public host; set = hard ceiling
-  # DLQ retry consumer (dlq-rules.md, ADR-0529): a SEPARATE group that republishes ONLY the replayable
+  # DLQ retry consumer (ADR-0529): a SEPARATE group that republishes ONLY the replayable
   # reasons (INFRA_TRANSIENT, STEP_TIMEOUT) to the main topic with a FRESH message_id + exponential
   # backoff and full jitter. cap-backoff is bounded well below max.poll.interval.ms (5m) so the repair
   # lane never sleeps long enough to trigger a rebalance.

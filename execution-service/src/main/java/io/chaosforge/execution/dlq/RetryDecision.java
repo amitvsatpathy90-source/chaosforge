@@ -1,7 +1,7 @@
 package io.chaosforge.execution.dlq;
 
 /**
- * Outcome of the DLQ retry policy for one dead-lettered record (dlq-rules.md). Sealed so the consumer
+ * Outcome of the DLQ retry policy for one dead-lettered record (ADR-0529). Sealed so the consumer
  * must handle every disposition via pattern matching — a new case cannot be silently dropped.
  */
 public sealed interface RetryDecision {

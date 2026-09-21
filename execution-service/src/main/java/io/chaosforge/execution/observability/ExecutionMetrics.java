@@ -19,7 +19,7 @@ public class ExecutionMetrics {
      * promised the latter — {@code alerts.yml} always read it correctly as a {@code rate()}, but the
      * architecture specifications SLO "DLT depth = 0" was unachievable by construction against a counter that never
      * returns to 0. There is deliberately <b>no</b> standing-backlog signal: Kafka retains records after
-     * ack, and the retry consumer acks hard poison it will never republish (dlq-rules.md), so
+     * ack, and the retry consumer acks hard poison it will never republish (ADR-0529), so
      * consumer-group lag reaches 0 with poison still in the topic. A true depth gauge needs a
      * human-triage watermark — a design decision, not a metric tweak. Do not rename this back to
      * "depth" without building that.

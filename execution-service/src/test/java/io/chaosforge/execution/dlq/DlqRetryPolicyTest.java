@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pure decision-core coverage for the DLQ retry policy (dlq-rules.md). No broker, no sleep — the whole
+ * Pure decision-core coverage for the DLQ retry policy (ADR-0529). No broker, no sleep — the whole
  * replayability taxonomy and the backoff curve are asserted here.
  */
 class DlqRetryPolicyTest {

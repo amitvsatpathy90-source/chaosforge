@@ -38,7 +38,7 @@ public class OllamaTriageClient {
     @CircuitBreaker(name = "ollama-chat", fallbackMethod = "fallback")
     @Bulkhead(name = "ollama-chat")
     public DlqTriageResult advise(DlqEnvelope envelope) {
-        // dlq_reason is a shape token (dlq-rules.md), safe to log; the prompt itself never is.
+        // dlq_reason is a shape token (ADR-0529 taxonomy), safe to log; the prompt itself never is.
         log.info("ai triage request model=ollama/{} dlq_reason={}", model, envelope.dlqReason());
         return chatClient.prompt()
                 .system(loadSystemPrompt())
