@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI gate for the migration-compat rule (schema-rules.md's expand-contract protocol, ADR-0527
+# CI gate for the migration-compat rule (ADR-0527's expand-contract protocol
 # §Migration; arch-audit F-09 in chaosforge-infra's audit — this repo already had the written
 # rule, this script is the enforcement half that was missing): a Flyway migration added in this
 # PR must be safe to run while the PREVIOUS app version is still serving traffic (migrations run
@@ -18,7 +18,7 @@
 # with zero files checked.
 #
 # Override: a migration that must ship a destructive change anyway (e.g. the "one step past
-# cutover" case in schema-rules.md's expand-contract protocol) acknowledges it explicitly:
+# cutover" case in ADR-0527's expand-contract protocol) acknowledges it explicitly:
 #   -- migration-safety: override <short reason>
 # anywhere in the file. Every override is printed to the CI log — visible, not silent.
 

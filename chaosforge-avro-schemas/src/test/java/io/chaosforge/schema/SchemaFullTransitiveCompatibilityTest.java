@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Acceptance gate <b>C29</b> — the canonical Avro subjects are <b>FULL_TRANSITIVE</b> (ADR-0527). This
- * is the build-time gate referenced by {@code .architecture specifications/rules/schema-rules.md}: it runs the real Avro
+ * is the build-time gate defined by ADR-0527: it runs the real Avro
  * {@link SchemaCompatibility} algorithm — the same backward/forward checks Apicurio applies — against
  * the <b>registered schema history</b> under {@code src/test/resources/avro-history/}, so a schema edit
  * that would break a rolling deploy or a rollback fails {@code ./gradlew check} instead of surfacing as

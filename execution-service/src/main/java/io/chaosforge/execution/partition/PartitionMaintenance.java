@@ -31,7 +31,7 @@ public class PartitionMaintenance {
     private final MeterRegistry meterRegistry;
 
     // Stall-runway, not retention-bounded — mint-clock accept window matches partition coverage by
-    // construction (CommandDecoder.verifyMintClock; partitioning-rules.md §1).
+    // construction (CommandDecoder.verifyMintClock; ADR-0539).
     @Value("${chaosforge.partition.lookahead-days:4}")
     private int lookaheadDays;
 

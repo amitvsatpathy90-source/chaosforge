@@ -27,7 +27,7 @@ genuinely *transitive* — it rejects a change that is FULL against its immediat
 against an older ancestor, which a plain-FULL (pairwise-latest) check would wave through.
 
 Evolution rules and the expand–contract workflow live in
-[`.architecture specifications/rules/schema-rules.md`](../.architecture specifications/rules/schema-rules.md) and
+[`ADR-0527`](adrs/ADR-0527.md) and
 [`avro-history/README.md`](../chaosforge-avro-schemas/src/test/resources/avro-history/README.md).
 
 ---

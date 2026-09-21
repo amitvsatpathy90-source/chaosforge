@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: shellcheck scripts/check-migration-safety.sh
 
-  # Migration-compat gate for schema-rules.md's expand-contract protocol (ADR-0527 §Migration;
+  # Migration-compat gate for ADR-0527's expand-contract protocol (ADR-0527 §Migration;
   # chaosforge-infra arch-audit F-09). The rule already existed in prose here — this job is the
   # enforcement half that was missing. Fails if a newly added Flyway migration contains destructive
   # DDL (DROP COLUMN/TABLE, RENAME, SET NOT NULL) with no explicit
