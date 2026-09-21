@@ -47,8 +47,15 @@ class TenantIdentityProvenanceIT extends AbstractCpIntegrationTest {
     private static final String GARBAGE_TOKEN = "not.a.valid.token";
     private static final String NO_TENANT_TOKEN = "no.tenant.token";
 
+    private static final String MCP_TOKEN = "mcp.jwt.token";
+    private static final String NORMAL_TOKEN = "normal.jwt.token";
+    private static final String MCP_NO_TENANT_TOKEN = "mcp.no.tenant.token";
+
     @MockitoBean
     private JwtDecoder jwtDecoder;
+
+    @MockitoBean(name = "mcpJwtDecoder")
+    private JwtDecoder mcpJwtDecoder;
 
     @Autowired
     private WebApplicationContext wac;
@@ -148,6 +155,62 @@ class TenantIdentityProvenanceIT extends AbstractCpIntegrationTest {
         mvc.perform(get("/v1/scenarios/{id}", scenarioId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(NO_TENANT_TOKEN))
                         .header("X-Tenant-Id", owner.toString()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The MCP resource accepts only a token validated by the dedicated MCP decoder.
+     *
+     * <p>The endpoint itself does not need to exist: a 404 proves authentication and tenant extraction
+     * completed, while the MCP security boundary still remains isolated from the normal /v1 decoder.
+     */
+    @Test
+    void mcpAudienceToken_reachesMcpChain() throws Exception {
+        when(mcpJwtDecoder.decode(MCP_TOKEN)).thenReturn(jwtFor(other));
+
+        mvc.perform(get("/mcp/probe")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * A normal API token must be rejected by the MCP decoder before the request reaches the MCP resource.
+     */
+    @Test
+    void normalAudienceToken_isRejectedByMcpChain() throws Exception {
+        when(mcpJwtDecoder.decode(NORMAL_TOKEN))
+                .thenThrow(new BadJwtException("wrong audience"));
+
+        mvc.perform(get("/mcp/probe")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(NORMAL_TOKEN)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The MCP audience must not authenticate the normal API resource.
+     *
+     * <p>This proves the two audience boundaries are directional rather than merely additive.
+     */
+    @Test
+    void mcpAudienceToken_isRejectedByNormalChain() throws Exception {
+        when(jwtDecoder.decode(MCP_TOKEN))
+                .thenThrow(new BadJwtException("wrong audience"));
+
+        mvc.perform(get("/v1/scenarios/{id}", scenarioId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * A token that authenticates the MCP resource but carries no tenant identity must never reach MCP.
+     */
+    @Test
+    void mcpTokenWithoutTenant_isUnauthorized() throws Exception {
+        when(mcpJwtDecoder.decode(MCP_NO_TENANT_TOKEN))
+                .thenReturn(jwtWithoutTenant());
+
+        mvc.perform(get("/mcp/probe")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_NO_TENANT_TOKEN)))
                 .andExpect(status().isUnauthorized());
     }
 

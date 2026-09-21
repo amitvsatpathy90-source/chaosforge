@@ -2,9 +2,13 @@ package io.chaosforge.controlplane.config;
 
 import io.chaosforge.controlplane.security.JwtTenantExtractionFilter;
 import java.util.List;
+
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -30,6 +34,7 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
 public class SecurityConfig {
 
     @Bean
+    @Primary
     public JwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
             @Value("${chaosforge.security.jwt.issuer}") String issuer,
@@ -52,10 +57,13 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
-        http
-            .csrf(AbstractHttpConfigurer::disable)
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            @Qualifier("jwtDecoder") JwtDecoder jwtDecoder)
+            throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(sm -> sm.sessionCreationPolicy(
+                    SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                 .requestMatchers("/internal/**").permitAll()   // mTLS-gated intra-service path (no public JWT)
@@ -64,6 +72,48 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             // Stands in for the built-in bearer filter; must run before authorization is enforced.
             .addFilterBefore(new JwtTenantExtractionFilter(jwtDecoder), AuthorizationFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    JwtDecoder mcpJwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${chaosforge.security.jwt.issuer}") String issuer,
+            @Value("${chaosforge.security.mcp.jwt.audience}") String audience) {
+
+        // Separate decoder instance because /mcp requires a different resource audience.
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        decoder.setJwtValidator(jwtClaimsValidator(issuer, audience));
+        return decoder;
+    }
+
+    /**
+     * MCP transport authentication boundary.
+     *
+     * <p>The MCP resource uses a dedicated audience while retaining the same JWKS and issuer.
+     * The decoder is deliberately local to this chain rather than another application-wide JwtDecoder bean,
+     * avoiding ambiguity with the existing decoder.
+     *
+     * <p>The existing {@link JwtTenantExtractionFilter} is reused so MCP requests populate the same
+     * verified TenantContext and ROLE_* authorities as the normal API path.
+     *
+     * <p>Tool-level scope authorization is intentionally out of this batch; no MCP tools exist yet.
+     */
+    @Bean
+    @Order(2)
+    SecurityFilterChain mcpSecurityFilterChain(
+            HttpSecurity http,
+            @Qualifier("mcpJwtDecoder") JwtDecoder mcpJwtDecoder)
+            throws Exception {
+        http.securityMatcher("/mcp", "/mcp/**")
+                .csrf(AbstractHttpConfigurer::disable) // Bearer-token MCP transport; no browser session/cookie auth.
+                .sessionManagement(session->session.sessionCreationPolicy(
+                        SessionCreationPolicy.STATELESS)) // MCP has no HTTP session; JWT authenticates every request.
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                // Reuse filter to verify the JWT, derive tenant_id and populate TenantContext + ROLE_* authorities.
+                .addFilterBefore(
+                        new JwtTenantExtractionFilter(mcpJwtDecoder),
+                        AuthorizationFilter.class);
         return http.build();
     }
 }

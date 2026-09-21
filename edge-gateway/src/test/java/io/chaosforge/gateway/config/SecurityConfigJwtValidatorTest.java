@@ -21,6 +21,8 @@ class SecurityConfigJwtValidatorTest {
 
     private final OAuth2TokenValidator<Jwt> validator = SecurityConfig.jwtClaimsValidator(ISS, AUD);
 
+    private static final String MCP_AUD = "chaosforge-mcp";
+
     private static Jwt.Builder freshToken() {
         return Jwt.withTokenValue("t").header("alg", "RS256").subject("lab-user")
                 .issuedAt(Instant.now().minusSeconds(30))
@@ -65,5 +67,31 @@ class SecurityConfigJwtValidatorTest {
                 .expiresAt(Instant.now().minusSeconds(300))
                 .issuer(ISS).audience(List.of(AUD)).build();
         assertThat(validator.validate(jwt).hasErrors()).isTrue();
+    }
+
+    /**
+     * MCP tokens must satisfy the dedicated resource audience used by the /mcp security chain.
+     */
+    @Test
+    void mcpAudience_passesMcpValidator() {
+        Jwt jwt = freshToken().issuer(ISS).audience(List.of(MCP_AUD)).build();
+
+        assertThat(SecurityConfig.jwtClaimsValidator(ISS, MCP_AUD)
+                .validate(jwt)
+                .hasErrors())
+                .isFalse();
+    }
+
+    /**
+     * A normal API token must not authenticate the MCP resource boundary.
+     */
+    @Test
+    void normalAudience_rejectedByMcpValidator() {
+        Jwt jwt = freshToken().issuer(ISS).audience(List.of(AUD)).build();
+
+        assertThat(SecurityConfig.jwtClaimsValidator(ISS, MCP_AUD)
+                .validate(jwt)
+                .hasErrors())
+                .isTrue();
     }
 }

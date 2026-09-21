@@ -66,4 +66,32 @@ class SecurityConfigJwtValidatorTest {
                 .issuer(ISS).audience(List.of(AUD)).build();
         assertThat(validator.validate(jwt).hasErrors()).isTrue();
     }
+
+    private static final String MCP_AUD = "chaosforge-mcp";
+
+    /**
+     * MCP tokens must satisfy the dedicated resource audience used by the /mcp security chain.
+     */
+    @Test
+    void mcpAudience_passesMcpValidator() {
+        Jwt jwt = freshToken().issuer(ISS).audience(List.of(MCP_AUD)).build();
+
+        assertThat(SecurityConfig.jwtClaimsValidator(ISS, MCP_AUD)
+                .validate(jwt)
+                .hasErrors())
+                .isFalse();
+    }
+
+    /**
+     * The normal API audience must not authenticate the MCP resource boundary.
+     */
+    @Test
+    void normalAudience_rejectedByMcpValidator() {
+        Jwt jwt = freshToken().issuer(ISS).audience(List.of(AUD)).build();
+
+        assertThat(SecurityConfig.jwtClaimsValidator(ISS, MCP_AUD)
+                .validate(jwt)
+                .hasErrors())
+                .isTrue();
+    }
 }

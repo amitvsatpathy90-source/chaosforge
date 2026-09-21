@@ -9,16 +9,21 @@ import io.github.resilience4j.reactor.bulkhead.operator.BulkheadOperator;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Duration;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.Duration;
+import java.util.UUID;
 
 /**
  * All outbound calls to the Control Plane. No blocking calls.
@@ -33,6 +38,9 @@ public class ControlPlaneClient {
 
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
+
+    // Negotiated MCP protocol version; forward it to CP unchanged.
+    private static final String MCP_PROTOCOL_VERSION = "MCP-Protocol-Version";
 
     private final WebClient webClient;
     private final CircuitBreaker proxyCb;
@@ -101,5 +109,41 @@ public class ControlPlaneClient {
     private static String last4(UUID id) {
         String s = id.toString();
         return s.substring(s.length() - 4);
+    }
+
+    /**
+     * Forwards MCP request/response streams without buffering or inspecting JSON-RPC.
+     */
+    public Mono<ResponseEntity<Flux<DataBuffer>>> forwardMcp(
+            Flux<DataBuffer> body,
+            String authorization,
+            String contentType,
+            String accept,
+            String protocolVersion) {
+
+        return webClient.post()
+                .uri("/mcp")
+                .headers(headers -> {
+                    headers.set(HttpHeaders.AUTHORIZATION, authorization);
+                    headers.set(HttpHeaders.CONTENT_TYPE, contentType);
+
+                    if (accept != null) {
+                        headers.set(HttpHeaders.ACCEPT, accept);
+                    }
+                    if (protocolVersion != null) {
+                        headers.set(MCP_PROTOCOL_VERSION, protocolVersion);
+                    }
+                })
+                .body(BodyInserters.fromDataBuffers(body))
+                .retrieve()
+                // 4xx is a CP response and must remain visible to the MCP client.
+                .onStatus(HttpStatusCode::is4xxClientError, response -> Mono.empty())
+                // 5xx is treated like the existing scenario proxy's upstream-failure path.
+                .onStatus(HttpStatusCode::is5xxServerError,
+                        response -> response.releaseBody()
+                                .then(Mono.error(
+                                        new UpstreamUnavailableException(
+                                                response.statusCode().value()))))
+                .toEntityFlux(DataBuffer.class);
     }
 }

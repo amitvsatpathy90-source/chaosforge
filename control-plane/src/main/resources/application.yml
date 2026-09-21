@@ -95,6 +95,10 @@ chaosforge:
     jwt:
       issuer: ${JWT_ISSUER:http://localhost:9000}
       audience: ${JWT_AUDIENCE:chaosforge}
+    # MCP is a separate OAuth resource boundary; normal API tokens must not authenticate to /mcp.
+    mcp:
+      jwt:
+        audience: ${MCP_JWT_AUDIENCE:chaosforge-mcp}
   outbox:
     poll-interval-ms: 1000
     batch-size: 64
