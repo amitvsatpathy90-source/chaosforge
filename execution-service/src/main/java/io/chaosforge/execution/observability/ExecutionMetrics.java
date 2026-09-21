@@ -4,7 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 /**
- * Execution-service SLIs (architecture specifications §SLIs). Counters only;
+ * Execution-service SLIs. Counters only;
  * <b>never</b> a {@code tenant_id} tag (cardinality bomb — tenant data lives on traces/logs). The
  * dimensions used here ({@code outcome}, {@code dlq_reason}, {@code topic}) are all low-cardinality.
  */
@@ -17,7 +17,7 @@ public class ExecutionMetrics {
      * record never decrements it, so it can only answer "how many records have we ever routed", never
      * "how many are sitting there now". It was previously named {@code chaosforge.dlq.depth}, which
      * promised the latter — {@code alerts.yml} always read it correctly as a {@code rate()}, but the
-     * architecture specifications SLO "DLT depth = 0" was unachievable by construction against a counter that never
+     * old SLO "DLT depth = 0" was unachievable by construction against a counter that never
      * returns to 0. There is deliberately <b>no</b> standing-backlog signal: Kafka retains records after
      * ack, and the retry consumer acks hard poison it will never republish (ADR-0529), so
      * consumer-group lag reaches 0 with poison still in the topic. A true depth gauge needs a

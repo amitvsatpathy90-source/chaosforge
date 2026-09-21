@@ -70,4 +70,4 @@ There is no live Apicurio registry in the test path — the gate checks against 
 `avro-history/` (the registry's job, done locally and deterministically). In a real pipeline the same
 `FULL_TRANSITIVE` level is also set on the Apicurio subject, and the CI gate is the pre-flight that
 makes a registry rejection impossible at deploy time. Apicurio must be HA before the Control Plane
-scales beyond one replica (see architecture specifications Known Limitations).
+scales beyond one replica.

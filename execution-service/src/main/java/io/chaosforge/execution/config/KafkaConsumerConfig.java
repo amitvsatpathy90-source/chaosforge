@@ -51,7 +51,7 @@ public class KafkaConsumerConfig {
         cfg.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         cfg.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 300_000);   // 5m; step aggregate timeout bounded below
         DefaultKafkaConsumerFactory<String, byte[]> factory = new DefaultKafkaConsumerFactory<>(cfg);
-        // Binds Kafka client metrics → kafka.consumer.lag etc. (architecture specifications §SLIs: command consumer lag).
+        // Binds Kafka client metrics → kafka.consumer.lag etc.; command-consumer lag is a core SLI.
         factory.addListener(new MicrometerConsumerListener<>(meterRegistry));
         return factory;
     }

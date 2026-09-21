@@ -26,7 +26,7 @@ import reactor.core.publisher.Mono;
  * not per-pod). Hash-tagged {@code {tenant:<id>}:rate} for Redis Cluster co-location. Lettuce
  * reactive only — no blocking calls.
  *
- * <p><b>Fail-open by design</b> (architecture specifications): if Redis or the policy lookup errors, the request is
+ * <p><b>Fail-open by design</b>: if Redis or the policy lookup errors, the request is
  * allowed through — availability is favoured over rate-limit correctness during a Redis outage. That
  * choice is now <b>instrumented and logged</b> (arch-audit H3): every decision increments
  * {@code chaosforge.gateway.rate_limit{outcome}} (allowed / rate_limited / fail_open), and a fail-open

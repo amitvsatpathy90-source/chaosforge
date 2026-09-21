@@ -1,5 +1,5 @@
 -- Runs once at first Postgres init (mounted into /docker-entrypoint-initdb.d/).
--- ChaosForge uses two logical databases (architecture specifications): chaosforge_cp and chaosforge_exec.
+-- ChaosForge uses two logical databases: chaosforge_cp and chaosforge_exec.
 -- Flyway V1–V6 manages the schema WITHIN each database at the owning service's startup —
 -- this script only creates the empty databases.
 CREATE DATABASE chaosforge_cp;
