@@ -90,8 +90,22 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
+      # MCP proxy path — isolated from gateway-cp so a CP-side MCP overload can't trip
+      # the breaker for /v1 replay/get traffic, or vice versa.
+      gateway-mcp:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+        record-exceptions:
+          - io.chaosforge.gateway.client.UpstreamUnavailableException
+          - java.util.concurrent.TimeoutException
   bulkhead:
     instances:
       gateway-cp:
         max-concurrent-calls: 64
         max-wait-duration: 0       # fail fast → BulkheadFullException → 503 (no queueing)
+      gateway-mcp:
+        max-concurrent-calls: 32   # separate concurrency budget from gateway-cp for MCP tool-call
+        max-wait-duration: 0

@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -26,13 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * MCP transport-proxy contract for {@link ControlPlaneClient#forwardMcp}.
- *
- * <p>The Gateway must remain protocol-blind: preserve the opaque request body and required MCP
- * transport headers, stream successful responses, pass through CP 4xx responses, and classify CP
- * 5xx responses through the existing {@link UpstreamUnavailableException} path.
+ * MCP transport-proxy contract for {@link ControlPlaneClient#forwardMcp}: the Gateway must remain
+ * protocol-blind — preserve the opaque request body and required MCP transport headers, stream
+ * successful responses, pass through CP 4xx responses, and classify CP 5xx responses through
+ * {@link UpstreamUnavailableException}.
  */
-class ControlPlaneClientMcpTest {
+class ControlPlaneClientMcpTransportTest {
 
     private static final Duration AWAIT = Duration.ofSeconds(5);
     private static final String MCP_PROTOCOL_VERSION = "MCP-Protocol-Version";
@@ -40,24 +40,11 @@ class ControlPlaneClientMcpTest {
     private HttpServer server;
     private ControlPlaneClient client;
 
-    private final AtomicReference<String> authorization = new AtomicReference<>();
-    private final AtomicReference<String> contentType = new AtomicReference<>();
-    private final AtomicReference<String> accept = new AtomicReference<>();
-    private final AtomicReference<String> protocolVersion = new AtomicReference<>();
-    private final AtomicReference<byte[]> requestBody = new AtomicReference<>();
-
     @BeforeEach
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.start();
-
-        client = new ControlPlaneClient(
-                WebClient.builder()
-                        .baseUrl("http://localhost:" + server.getAddress().getPort())
-                        .build(),
-                CircuitBreakerRegistry.ofDefaults(),
-                BulkheadRegistry.ofDefaults(),
-                new SimpleMeterRegistry());
+        client = clientWith(CircuitBreakerRegistry.ofDefaults(), BulkheadRegistry.ofDefaults());
     }
 
     @AfterEach
@@ -65,14 +52,69 @@ class ControlPlaneClientMcpTest {
         server.stop(0);
     }
 
+    /** Builds a client against the running test server with the given CB/bulkhead config. */
+    private ControlPlaneClient clientWith(CircuitBreakerRegistry cbRegistry, BulkheadRegistry bulkheadRegistry) {
+        return new ControlPlaneClient(
+                WebClient.builder().baseUrl("http://localhost:" + server.getAddress().getPort()).build(),
+                cbRegistry, bulkheadRegistry, new SimpleMeterRegistry());
+    }
+
+    /** A fresh empty-JSON request body — a Flux can only be subscribed once, so no shared field. */
+    private static Flux<DataBuffer> emptyJsonBody() {
+        return Flux.just(DefaultDataBufferFactory.sharedInstance.wrap("{}".getBytes(UTF_8)));
+    }
+
+    /** Calls /mcp with a fixed bearer token + content type; no Accept/protocol-version. */
+    private static ResponseEntity<Flux<DataBuffer>> forward(ControlPlaneClient target, Duration blockFor) {
+        return target.forwardMcp(emptyJsonBody(), "Bearer mcp-token", "application/json", null, null)
+                .block(blockFor);
+    }
+
+    private static ResponseEntity<Flux<DataBuffer>> forward(ControlPlaneClient target) {
+        return forward(target, AWAIT);
+    }
+
+    /** Wires /mcp to always answer with a fixed status + body; returns a call counter. */
+    private AtomicInteger respondWith(int status, byte[] body) {
+        AtomicInteger calls = new AtomicInteger();
+        server.createContext("/mcp", exchange -> {
+            calls.incrementAndGet();
+            exchange.sendResponseHeaders(status, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        return calls;
+    }
+
+    /** Consume and release the test response stream after asserting its bytes. */
+    private static byte[] readBody(Flux<DataBuffer> body) {
+        DataBuffer buffer = DataBufferUtils.join(body).block(AWAIT);
+        assertThat(buffer).isNotNull();
+
+        try {
+            byte[] bytes = new byte[buffer.readableByteCount()];
+            buffer.read(bytes);
+            return bytes;
+        } finally {
+            DataBufferUtils.release(buffer);
+        }
+    }
+
     /**
-     * The load-bearing transport case: request bytes and required MCP headers reach CP unchanged,
-     * while the successful response remains a {@code DataBuffer} stream.
+     * The load-bearing transport case: request bytes and required MCP headers reach CP
+     * unchanged, while the successful response remains a {@code DataBuffer} stream.
      */
     @Test
     void forwardsBodyAndTransportHeaders_andStreamsResponse() {
         byte[] request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}".getBytes(UTF_8);
         byte[] response = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}".getBytes(UTF_8);
+
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> contentType = new AtomicReference<>();
+        AtomicReference<String> accept = new AtomicReference<>();
+        AtomicReference<String> protocolVersion = new AtomicReference<>();
+        AtomicReference<byte[]> requestBody = new AtomicReference<>();
 
         server.createContext("/mcp", exchange -> {
             // Capture the opaque transport exactly as CP receives it.
@@ -127,7 +169,7 @@ class ControlPlaneClientMcpTest {
         });
 
         ResponseEntity<Flux<DataBuffer>> result = client.forwardMcp(
-                        Flux.just(DefaultDataBufferFactory.sharedInstance.wrap("{}".getBytes(UTF_8))),
+                        emptyJsonBody(),
                         "Bearer mcp-token",
                         "application/json",
                         "application/json, text/event-stream",
@@ -140,40 +182,15 @@ class ControlPlaneClientMcpTest {
     }
 
     /**
-     * CP 5xx is the existing Gateway upstream-failure contract and must not be exposed as a raw CP response.
+     * CP 5xx is the existing Gateway upstream-failure contract and must not be exposed as a
+     * raw CP response.
      */
     @Test
     void fiveHundredResponse_mapsToUpstreamUnavailable() {
-        server.createContext("/mcp", exchange -> {
-            byte[] response = "control plane unavailable".getBytes(UTF_8);
-            exchange.sendResponseHeaders(503, response.length);
-            try (OutputStream out = exchange.getResponseBody()) {
-                out.write(response);
-            }
-        });
+        respondWith(503, "control plane unavailable".getBytes(UTF_8));
 
-        assertThatThrownBy(() -> client.forwardMcp(
-                        Flux.just(DefaultDataBufferFactory.sharedInstance.wrap("{}".getBytes(UTF_8))),
-                        "Bearer mcp-token",
-                        "application/json",
-                        "application/json, text/event-stream",
-                        null)
-                .block(AWAIT))
+        assertThatThrownBy(() -> forward(client))
                 .isInstanceOf(UpstreamUnavailableException.class)
                 .hasMessage("control plane returned 503");
-    }
-
-    /** Consume and release the test response stream after asserting its bytes. */
-    private static byte[] readBody(Flux<DataBuffer> body) {
-        DataBuffer buffer = DataBufferUtils.join(body).block(AWAIT);
-        assertThat(buffer).isNotNull();
-
-        try {
-            byte[] bytes = new byte[buffer.readableByteCount()];
-            buffer.read(bytes);
-            return bytes;
-        } finally {
-            DataBufferUtils.release(buffer);
-        }
     }
 }
