@@ -94,7 +94,9 @@ public class JwtTenantExtractionFilter extends OncePerRequestFilter {
 
         String scope = jwt.getClaimAsString("scope");
         if (scope != null && !scope.isBlank()) {
-            // MCP scopes are space-delimited; only the closed ChaosForge set becomes authorities.
+            // Scope mapping is shared because this filter is the common JWT → SecurityContext boundary
+            // for both /v1 and /mcp. Only the closed ChaosForge allow-list becomes an application authority
+            // unrelated IdP scopes remain inert.
             for (String value : scope.trim().split("\\s+")) {
                 if (KNOWN_SCOPES.contains(value)) {
                     authorities.add(new SimpleGrantedAuthority("SCOPE_" + value));

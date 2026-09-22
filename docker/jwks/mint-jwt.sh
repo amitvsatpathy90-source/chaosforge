@@ -3,17 +3,21 @@
 #
 # What ChaosForge actually validates (the three SecurityConfigs, ADR-0524 / mtls-rules.md):
 # signature against the JWKS + exp/nbf + issuer EXACT-STRING match + audience (aud must contain
-# the service's configured value). So --iss/--aud below MUST match chaosforge.security.jwt.
-# {issuer,audience} (env JWT_ISSUER/JWT_AUDIENCE; lab defaults equal the defaults here) or the
-# token is rejected 401. Claims consumed: tenant_id (must parse as a UUID; gateway
-# TenantContextWebFilter + CP JwtTenantExtractionFilter) and roles[] (mapped to ROLE_*; the exec
-# kill switch requires OPERATOR).
+# the service's configured value). So --iss/--aud below MUST match the configured resource boundary:
+# normal API uses chaosforge.security.jwt; /mcp uses the same issuer with the dedicated
+# chaosforge.security.mcp.jwt.audience. The {issuer,audience} env vars override the normal API
+# defaults; a token with the wrong values is rejected 401. Claims consumed: tenant_id (must parse
+# as a UUID; gateway TenantContextWebFilter + CP JwtTenantExtractionFilter) and roles[]
+# (mapped to ROLE_*; the exec kill switch requires OPERATOR), plus the allow-listed scope values
+# (mapped to SCOPE_* by the CP MCP filter; unknown scopes remain inert).
 #
 # usage:
-#   mint-jwt.sh [--tenant <uuid>] [--roles CSV] [--ttl <seconds>] [--sub <name>] [--iss <s>] [--aud <s>]
+#   mint-jwt.sh [--tenant <uuid>] [--roles CSV] [--scope <space-delimited>]
+#               [--ttl <seconds>] [--sub <name>] [--iss <s>] [--aud <s>]
 # examples:
 #   TENANT_JWT=$(docker/jwks/mint-jwt.sh --tenant 5f0e8a10-0000-4000-8000-000000000001)
 #   OPERATOR_JWT=$(docker/jwks/mint-jwt.sh --roles OPERATOR)   # kill-switch operator token
+#   MCP_READ_JWT=$(docker/jwks/mint-jwt.sh --aud chaosforge-mcp --scope chaosforge.read)
 #
 # Keep --ttl >= 300: mtls-rules.md requires >= 5 min so the gateway->CP hop + retries never
 # carry an expiring token.
@@ -22,6 +26,7 @@ cd "$(dirname "$0")"
 
 TENANT="00000000-0000-0000-0000-000000000001"   # fixed default so smoke tests are reproducible
 ROLES="TENANT"
+SCOPE=""
 TTL=3600
 SUB="lab-user"
 ISS="http://localhost:9000"
@@ -37,6 +42,7 @@ while [ $# -gt 0 ]; do
     --sub)    SUB="$2";    shift 2 ;;
     --iss)    ISS="$2";    shift 2 ;;
     --aud)    AUD="$2";    shift 2 ;;
+    --scope)  SCOPE="$2";  shift 2 ;;
     --help|-h) usage ;;
     *) echo "unknown arg: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -54,8 +60,17 @@ ROLES_JSON=$(printf '%s' "$ROLES" | awk -F, '{ for (i=1;i<=NF;i++) printf "%s\"%
 
 NOW=$(date +%s)
 HEADER=$(printf '{"alg":"RS256","typ":"JWT","kid":"%s"}' "$KID" | b64url)
-PAYLOAD=$(printf '{"iss":"%s","sub":"%s","aud":"%s","tenant_id":"%s","roles":[%s],"iat":%d,"exp":%d}' \
-  "$ISS" "$SUB" "$AUD" "$TENANT" "$ROLES_JSON" "$NOW" $((NOW + TTL)) | b64url)
+
+# Omit the claim entirely when no scope is requested so this helper preserves
+# the distinction between "scope absent" and "scope present but empty".
+if [ -n "$SCOPE" ]; then
+  SCOPE_JSON=",\"scope\":\"$SCOPE\""
+else
+  SCOPE_JSON=""
+fi
+
+PAYLOAD=$(printf '{"iss":"%s","sub":"%s","aud":"%s","tenant_id":"%s","roles":[%s]%s,"iat":%d,"exp":%d}' \
+  "$ISS" "$SUB" "$AUD" "$TENANT" "$ROLES_JSON" "$SCOPE_JSON" "$NOW" $((NOW + TTL)) | b64url)
 SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign keys/private.pem -binary | b64url)
 
 printf '%s.%s.%s\n' "$HEADER" "$PAYLOAD" "$SIG"

@@ -137,6 +137,31 @@ chaosforge:
       chunk-size: 500            # short tx; stays well under statement_timeout (5s)
       max-chunks-per-run: 1000   # ≤ 500k rows/run; remainder taken next run
   ai:
+    mcp:
+      server:
+        # MCP is exposed through the existing CP MVC application at /mcp.
+        # SYNC is intentional: TenantContext is a ThreadLocal and the first
+        # MCP capability must execute on the authenticated request thread.
+        protocol: STREAMABLE
+        type: SYNC
+        name: chaosforge-control-plane
+        version: 1.0.0
+
+        # Keep annotation-based registration explicit even though the starter
+        # enables it by default. This makes the tool-registration contract visible.
+        annotation-scanner:
+          enabled: true
+
+        # Batch 4 exposes tools only. Resources/prompts/completions remain deferred.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
+        streamable-http:
+          mcp-endpoint: /mcp
+
     # Optional global allowlist for AI-proposed target hosts. Empty = SSRF guard only (lab); a
     # per-tenant tenant_targets table is the deferred enhancement (TenantTargetValidator).
     allowed-target-hosts: ${AI_ALLOWED_TARGET_HOSTS:}
