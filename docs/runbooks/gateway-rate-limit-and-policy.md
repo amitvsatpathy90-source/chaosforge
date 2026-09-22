@@ -1,7 +1,6 @@
 # Runbook: gateway rate-limit fail-open & tenant-policy feed (arch-audit H1/H3)
 
-**What these cover.** Two related Edge Gateway degradation modes, both **fail-open by design**
-(architecture specification: availability over rate-limit correctness during a dependency outage) but both now
+**What these cover.** Two related Edge Gateway degradation modes, both **fail-open by design** — availability is favoured over rate-limit correctness during a dependency outage — but both now
 instrumented so the degradation is visible instead of silent (ADR-0536, ADR-0537).
 
 | Alert | Fires when | Means |

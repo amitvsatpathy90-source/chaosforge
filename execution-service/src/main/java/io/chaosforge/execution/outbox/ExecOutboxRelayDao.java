@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 /**
  * JdbcTemplate access for the Exec result-event outbox relay (ADR-0523 Phase 3 + ADR-0528 relay
  * semantics): lease-on-claim under SKIP LOCKED, one batched finalize tx per tick. Mirrors the CP
- * relay shape but self-contained — services do not share a module (architecture specifications).
+ * relay shape but self-contained — services do not share a module.
  * Every statement predicates on the full (msg_ts, message_id) PK so it prunes to one partition
  * (partitioning-rules §2). Hot lane (younger than claim-window-days) + straggler lane (older,
  * oldest-first) so no PENDING row is ever unreachable before its partition drops.

@@ -3,7 +3,7 @@
 # Two SLO alerts are the gated pair — each has a runbook under docs/runbooks/:
 #   - ScenarioCompletionRateBelowSLO   (C27)  → docs/runbooks/scenario-completion-rate.md
 #   - StuckScenarioBudgetExceeded      (C26)  → docs/runbooks/stuck-scenario.md
-# The remaining rules are the operational backstops named in the architecture specifications SLO/SLI tables.
+# The remaining rules are operational backstops for the platform's SLO/SLI signals.
 #
 # Metric names are the real, scraped series (verified against the Grafana SLI dashboard and
 # ExecutionMetrics/OutboxMetrics): Micrometer renders `chaosforge.scenario.execution` as
@@ -81,7 +81,7 @@ groups:
       #
       # The series is chaosforge_dlq_routed_total — routings, NOT depth (arch-audit F5; renamed from
       # chaosforge_dlq_depth_total). It is monotonic, so only its rate() is meaningful; there is no
-      # standing-backlog signal in the system at all (see the architecture specifications SLO table). This alert catches
+      # standing-backlog signal in the system at all. This alert catches
       # poison ARRIVING, never poison SITTING.
       #
       # `by (dlq_reason)` is load-bearing: the summary interpolates {{ $labels.dlq_reason }}, and a bare
@@ -178,7 +178,7 @@ groups:
             or a create-ahead stall immediately.
           runbook: docs/runbooks/dlq-and-outbox.md
 
-      # Straggler-lane backlog (architecture specifications SLI: alert > 0 sustained). PENDING rows older than the hot-lane
+      # Straggler-lane backlog (alert > 0 sustained). PENDING rows older than the hot-lane
       # claim window are reachable only by the slow straggler lane; a sustained non-zero value means rows
       # are aging toward their partition-drop age before delivery — the C28 retention fuse burning down.
       - alert: OutboxStragglerBacklog
@@ -194,7 +194,7 @@ groups:
           runbook: docs/runbooks/dlq-and-outbox.md
 
       # Command-accept latency SLO: P99 ≤ 300ms from POST to outbox commit (CP HTTP path). EXCLUDES the AI
-      # authoring path (`/v1/ai/**`): local Ollama inference is intentionally 10–60s (architecture specifications) and would
+      # authoring path (`/v1/ai/**`): local Ollama inference is intentionally 10–60s and would
       # otherwise dominate the aggregate quantile and false-fire this SLO permanently (arch-audit H3).
       - alert: CommandAcceptLatencyP99High
         expr: |
@@ -260,7 +260,7 @@ groups:
           runbook: docs/runbooks/gateway-rate-limit-and-policy.md
 
       # Rate limiting failing open (arch-audit H3): Redis/policy errors let requests through unthrottled.
-      # Fail-open is by design during a Redis outage (architecture specifications), but a sustained signal means the limiter
+      # Fail-open is by design during a Redis outage, but a sustained signal means the limiter
       # is globally disabled — this makes that condition visible instead of silent.
       - alert: RateLimitFailingOpen
         expr: sum(rate(chaosforge_gateway_rate_limit_total{job="edge-gateway", outcome="fail_open"}[5m])) > 0

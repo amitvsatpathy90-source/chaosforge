@@ -33,7 +33,7 @@ chaosforge:
   # A marker cannot cover its own omission — that residual is carried by the chaosforge.security.hardened
   # gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
   deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
-  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # JWT claim validation on top of signature+exp (ADR-0524 contract: signature, exp, iss, aud):
   # iss is an exact-string match, aud must contain this value. Lab defaults match what
   # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
   security:
@@ -64,7 +64,7 @@ management:
       application: edge-gateway
 
 # Reactive Resilience4j on the upstream CP path. Per-instance config only — NO configs.default
-# (every boundary is explicit; architecture specifications: "no global defaults"). The 3s timeout is a Reactor
+# (every boundary is explicit; no global defaults). The 3s timeout is a Reactor
 # .timeout() (→ TimeoutException). 409 is NOT recorded — it passes through as non-fault.
 resilience4j:
   circuitbreaker:

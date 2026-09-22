@@ -19,7 +19,7 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 
 /**
  * Spring Security 7 reactive resource server. The gateway is the sole acceptor of public JWTs
- * (mtls-rules.md). Invalid JWT → 401 here, never forwarded to the Control Plane.
+ * (ADR-0524). Invalid JWT → 401 here, never forwarded to the Control Plane.
  */
 @Configuration
 @EnableWebFluxSecurity

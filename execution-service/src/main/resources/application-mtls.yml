@@ -1,9 +1,9 @@
-# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+# mTLS profile (ADR-0531). Activate with: --spring.profiles.active=mtls
 #
 # The Execution Service is BOTH sides of the mesh:
 #   - SERVER: its management/admin HTTP endpoints require a client cert (`client-auth: need`). The
 #     @KafkaListener path carries no HTTP JWT — tenant identity there is the signed Avro payload,
-#     verified at pipeline step 1 (mtls-rules.md), so this server posture guards only the HTTP surface.
+#     verified at pipeline step 1 (ADR-0524), so this server posture guards only the HTTP surface.
 #   - CLIENT: the rule-set fetch to the Control Plane (CpRuleSetLoader → controlPlaneRestClient) presents
 #     this same internal-CA cert. `chaosforge.mtls.client-bundle` switches that client onto mTLS.
 #

@@ -29,7 +29,7 @@ public class PartitionMaintenance {
     private final JdbcTemplate jdbc;
     private final MeterRegistry meterRegistry;
 
-    // Stall-runway, not retention-bounded — create-ahead/drop-old never overlap (partitioning-rules.md §1).
+    // Stall-runway, not retention-bounded — create-ahead/drop-old never overlap.
     @Value("${chaosforge.partition.lookahead-days:4}")
     private int lookaheadDays;
 

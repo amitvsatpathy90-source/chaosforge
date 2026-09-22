@@ -35,11 +35,11 @@ public class DeploymentPostureGuard {
         List<String> gaps = new ArrayList<>();
         if (sslBundle.isBlank()) {
             gaps.add("server.ssl.bundle unset — the management/admin HTTP surface is plain HTTP, so the "
-                    + "OPERATOR-gated kill switch is exposed without mTLS (mtls-rules.md)");
+                    + "OPERATOR-gated kill switch is exposed without mTLS (ADR-0531)");
         }
         if (!"need".equalsIgnoreCase(clientAuth.trim())) {
             gaps.add("server.ssl.client-auth != need — a client cert is not mandatory ('want' is "
-                    + "explicitly forbidden by mtls-rules.md)");
+                    + "explicitly forbidden by ADR-0531)");
         }
         if (clientBundle.isBlank()) {
             gaps.add("chaosforge.mtls.client-bundle unset — the exec->CP rule-set fetch presents no client "

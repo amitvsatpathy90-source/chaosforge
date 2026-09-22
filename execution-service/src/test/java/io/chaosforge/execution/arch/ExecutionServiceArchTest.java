@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * Execution Service structural invariants (execution-service-rules.md). The determinism boundary
+ * Execution Service structural invariants. The determinism boundary
  * (ADR-0518) is enforced here: no Spring AI on the replay/Kafka path.
  */
 class ExecutionServiceArchTest {
@@ -50,7 +50,7 @@ class ExecutionServiceArchTest {
 
     @Test
     void documentedExecutionSliMetricsAreEmitted() throws IOException {
-        // Pins the exec-emitted side of architecture specifications's SLIs table — see the CP counterpart in
+        // Pins the exec-emitted side of the SLIs table — see the CP counterpart in
         // ControlPlaneArchTest for the rationale. A rename here fails the build and forces the doc.
         for (String metric : List.of(
                 "inbox.duplicates_suppressed_total", "chaosforge.steady_state.breach_total",
@@ -58,7 +58,7 @@ class ExecutionServiceArchTest {
                 "outbox.oldest_pending_age_seconds", "outbox.pending_count",
                 "chaosforge.partition.default_rows", "db.schema.migrations.pending")) {
             assertThat(mainSourcesContaining('"' + metric + '"'))
-                    .as("SLI metric %s named in architecture specifications must be emitted by execution-service", metric)
+                    .as("SLI metric %s must be emitted by execution-service", metric)
                     .isNotEmpty();
         }
     }

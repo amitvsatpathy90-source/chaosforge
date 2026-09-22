@@ -16,7 +16,7 @@ import org.apache.avro.Schema;
  *
  * <p>Registry I/O cannot happen inside CP/Exec's transactional codecs ({@code AvroCommandPayloadCodec},
  * {@code AvroResultPayloadCodec} — both explicitly local {@code SpecificDatumWriter}s for exactly this
- * reason). This class is where schema-rules.md's "producers register before send" actually happens
+ * reason). This class is where ADR-0525's "producers register before send" actually happens
  * instead: once, at build/deploy time, never per message. The running services never call Apicurio.
  *
  * <p>{@code ifExists=FIND_OR_CREATE_VERSION} makes re-running against an already-registered,

@@ -2,7 +2,7 @@ package io.chaosforge.execution.outbox;
 
 /**
  * One failed publish outcome, carried from the harvest loop to the batched finalize (mirrors the CP
- * record — the relays are deliberately independent, architecture specifications "do not collapse").
+ * record — the relays are deliberately independent (do not collapse).
  *
  * <p>{@code recordFatal} gates the DEAD transition (arch-audit A-4): only a fault that is provably a
  * property of the <em>record</em> (see {@link PublishFaultClassifier}) may quarantine the row. A

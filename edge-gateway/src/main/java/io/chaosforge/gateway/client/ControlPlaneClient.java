@@ -22,7 +22,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * All outbound calls to the Control Plane. No blocking calls.
- * Proxy path (initiateReplay/getScenario): bulkhead → CB → timeout order (gateway-rules.md);
+ * Proxy path (initiateReplay/getScenario): bulkhead → CB → timeout order (see application.yml);
  * forwards Authorization/Idempotency-Key intact for CP's JWT re-verify + idempotency.
  * Cache-load path (fetchTenantPolicy): hits CP's /internal policy endpoint outside any request
  * context (mTLS-authenticated as the gateway process, ADR-0532); separate CB, fail-open to the

@@ -19,7 +19,7 @@ import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.stereotype.Component;
 
 /**
- * Read-only, point lookup of one DLQ record's <b>headers</b> for advisory triage (ai-rules.md
+ * Read-only, point lookup of one DLQ record's <b>headers</b> for advisory triage (ADR-0518
  * Tier 2). Structural guarantees, all load-bearing:
  *
  * <ul>

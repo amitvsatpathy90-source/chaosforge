@@ -80,7 +80,7 @@ public class ScenarioReplayOrchestrator {
         this.claimed = registry.counter("replay.claimed");
         this.idempotentHit = registry.counter("replay.idempotent_hit");
         this.conflict = registry.counter("replay.conflict");
-        // No tenant_id label — architecture specifications hard rule. Enumeration signal goes on the WARN log below.
+        // No tenant_id label — hard rule. Enumeration signal goes on the WARN log below.
         this.notFound = registry.counter("replay.notfound");
     }
 

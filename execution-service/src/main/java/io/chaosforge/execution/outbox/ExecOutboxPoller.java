@@ -28,7 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Execution Service result-event outbox relay (Defect B fix; ADR-0523 Phase 3 + ADR-0528 relay
  * semantics). A near-mirror of the CP {@code OutboxPoller}, kept local to {@code execution-service}
  * rather than extracted to a shared module — the two services are deliberately independent runtime
- * surfaces (architecture specifications: "do not collapse").
+ * surfaces (do not collapse).
  *
  * <p>Each tick: (1) claims + leases a due batch under {@code FOR UPDATE SKIP LOCKED} in one short tx
  * that commits immediately; (2) dispatches the whole batch to Kafka <b>pipelined</b> (all sends in

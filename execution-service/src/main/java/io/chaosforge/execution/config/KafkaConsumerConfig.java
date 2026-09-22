@@ -51,7 +51,7 @@ public class KafkaConsumerConfig {
         cfg.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         cfg.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 300_000);   // 5m; step aggregate timeout bounded below
         DefaultKafkaConsumerFactory<String, byte[]> factory = new DefaultKafkaConsumerFactory<>(cfg);
-        // Binds Kafka client metrics → kafka.consumer.lag etc. (architecture specifications §SLIs: command consumer lag).
+        // Binds Kafka client metrics → kafka.consumer.lag etc.; command-consumer lag is a core SLI.
         factory.addListener(new MicrometerConsumerListener<>(meterRegistry));
         return factory;
     }
@@ -79,7 +79,7 @@ public class KafkaConsumerConfig {
     }
 
     /**
-     * DLQ retry consumer factory (dlq-rules.md, ADR-0529). No DeadLetterPublishingRecoverer — a
+     * DLQ retry consumer factory (ADR-0529). No DeadLetterPublishingRecoverer — a
      * failed republish retries with fixed backoff instead of chaining to {@code .DLQ.DLQ}, except
      * {@link RecordTooLargeException} (arch-audit F-08), which can never self-heal and would
      * otherwise freeze the lane forever. AuthorizationException stays retryable (can be transient).
@@ -120,6 +120,6 @@ public class KafkaConsumerConfig {
         if (cause instanceof DlqRoutableException routable) {
             return routable.dlqReason();
         }
-        return "SCHEMA_INVALID";   // never guess a replayable class (dlq-rules.md)
+        return "SCHEMA_INVALID";   // never guess a replayable class (ADR-0529)
     }
 }

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Pipeline step 1: Avro decode + tenant verification + message-id mint-clock sanity. The signed Avro
- * {@code tenantId} is the authoritative tenant on the Kafka path (mtls-rules.md); the {@code x-tenant-id}
+ * {@code tenantId} is the authoritative tenant on the Kafka path (ADR-0524); the {@code x-tenant-id}
  * header must match it. Any failure → SCHEMA_INVALID → DLQ (not replayable).
  */
 @Component

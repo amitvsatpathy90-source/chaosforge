@@ -13,7 +13,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Ollama DLQ-triage boundary (ai-rules.md Tier 2 — advisory only). Own bean so reader faults
+ * Ollama DLQ-triage boundary (ADR-0518 surface 2 — advisory only). Own bean so reader faults
  * (400/404) never count against the shared ollama-chat CB. Prompt built only from redacted
  * {@link DlqEnvelope} fields (ADR-0519); exceptionSummary is attacker-influenceable free text
  * (GAP-06) so it's sanitized via {@link PromptSanitizer} before the user() slot.
@@ -38,7 +38,7 @@ public class OllamaTriageClient {
     @CircuitBreaker(name = "ollama-chat", fallbackMethod = "fallback")
     @Bulkhead(name = "ollama-chat")
     public DlqTriageResult advise(DlqEnvelope envelope) {
-        // dlq_reason is a shape token (dlq-rules.md), safe to log; the prompt itself never is.
+        // dlq_reason is a shape token (ADR-0529 taxonomy), safe to log; the prompt itself never is.
         log.info("ai triage request model=ollama/{} dlq_reason={}", model, envelope.dlqReason());
         return chatClient.prompt()
                 .system(loadSystemPrompt())

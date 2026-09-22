@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionException;
 
 /**
- * The load-bearing pipeline (architecture specifications): decode+tenant (1) → claim=fence+inbox (2,3) → execute (4,5)
+ * The load-bearing pipeline: decode+tenant (1) → claim=fence+inbox (2,3) → execute (4,5)
  * → finalize=outbox (6) → manual ack (7). Returns void. Ack fires ONLY after Phase 3 commits. Any
  * thrown {@link DlqRoutableException} propagates to the container error handler → DLQ (no ack), so the
  * partition advances past poison and the right {@code x-dlq-reason} is set.

@@ -1,4 +1,4 @@
-# mTLS profile (mtls-rules.md, ADR-0531). Activate with: --spring.profiles.active=mtls
+# mTLS profile (ADR-0531). Activate with: --spring.profiles.active=mtls
 #
 # The Edge Gateway is the SOLE PUBLIC INGRESS. Its own server-side TLS faces the internet and would use
 # a PUBLIC cert — out of scope for the internal mesh and left on HTTP in the lab. On the INTRA-service

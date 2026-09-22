@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Execution Service result-outbox SLIs (architecture specifications §SLIs). Gauges only — <b>never</b> a
+ * Execution Service result-outbox SLIs. Gauges only — <b>never</b> a
  * {@code tenant_id} label (cardinality bomb). A stalled relay surfaces as a rising
  * {@code outbox.oldest_pending_age_seconds}; a poison result event surfaces as {@code outbox.dead_count}.
  */

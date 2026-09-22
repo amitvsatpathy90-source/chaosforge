@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mint an RS256 lab JWT signed by keys/private.pem (run generate-jwks.sh first).
 #
-# What ChaosForge actually validates (the three SecurityConfigs, ADR-0524 / mtls-rules.md):
+# What ChaosForge actually validates (the three SecurityConfigs, ADR-0524):
 # signature against the JWKS + exp/nbf + issuer EXACT-STRING match + audience (aud must contain
 # the service's configured value). So --iss/--aud below MUST match chaosforge.security.jwt.
 # {issuer,audience} (env JWT_ISSUER/JWT_AUDIENCE; lab defaults equal the defaults here) or the
@@ -15,7 +15,7 @@
 #   TENANT_JWT=$(docker/jwks/mint-jwt.sh --tenant 5f0e8a10-0000-4000-8000-000000000001)
 #   OPERATOR_JWT=$(docker/jwks/mint-jwt.sh --roles OPERATOR)   # kill-switch operator token
 #
-# Keep --ttl >= 300: mtls-rules.md requires >= 5 min so the gateway->CP hop + retries never
+# Keep --ttl >= 300: ADR-0524 requires >= 5 min so the gateway->CP hop + retries never
 # carry an expiring token.
 set -euo pipefail
 cd "$(dirname "$0")"

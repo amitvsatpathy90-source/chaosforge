@@ -20,7 +20,7 @@ avro-history/
    `src/main/avro`, or the gate has nothing to compare against.
 2. Make your change in `src/main/avro/`. Allowed under FULL_TRANSITIVE: add a field **with a default**,
    remove a field **that has a default**, widen `int`→`long`. Forbidden: add a required field, remove a
-   required field, rename (use `aliases`), narrow a type. (Full table in `.architecture specifications/rules/schema-rules.md`.)
+   required field, rename (use `aliases`), narrow a type. (Full table in ADR-0527.)
 3. Run `./gradlew :chaosforge-avro-schemas:avroSchemaCompatibilityCheck`. A violation fails the build
    with the offending ancestor named — it is never a runtime consumer surprise.
 

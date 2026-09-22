@@ -1,7 +1,7 @@
 package io.chaosforge.execution.dlq;
 
 /**
- * Carries the {@code x-dlq-reason} for a message that must be dead-lettered (dlq-rules.md). The
+ * Carries the {@code x-dlq-reason} for a message that must be dead-lettered (ADR-0529). The
  * {@code replayable} flag documents intent; the DLQ retry consumer is the only component that acts
  * on it, and only for INFRA_TRANSIENT / STEP_TIMEOUT.
  */

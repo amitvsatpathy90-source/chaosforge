@@ -14,7 +14,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Outbox lag — oldest pending age (CP)",
-      "description": "Primary outbox SLI (architecture specifications). Alert when this climbs — the relay is stalled.",
+      "description": "Primary outbox SLI. Alert when this climbs — the relay is stalled.",
       "datasource": { "type": "prometheus", "uid": "chaosforge-prometheus" },
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },

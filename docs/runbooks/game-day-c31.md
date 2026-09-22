@@ -290,7 +290,7 @@ Complete this **after** the stack has returned to steady state and all alerts ha
 - [ ] Completion rate, outbox lag, and consumer lag are back at baseline.
 
 If every box is checked: **C31 PASS** — record the date, the build/commit SHA, the participants, and
-attach the completed experiment log. Update the C31 gate in `architecture specification` with the run date.
+attach the completed experiment log. Record the run date in the C31 attestation.
 
 If any box is unchecked: **C31 FAIL** — file the gap (the bug or the missing automation), fix it, and
 re-run the whole exercise from a clean stack. A partial pass does not count.

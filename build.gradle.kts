@@ -26,7 +26,7 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
-        // Surface virtual-thread pinning during tests (architecture specifications JDBC threading; test asserts pinned == 0)
+        // Surface virtual-thread pinning during tests; the test asserts pinned == 0.
         jvmArgs("-Djdk.tracePinnedThreads=full")
 
         testLogging {

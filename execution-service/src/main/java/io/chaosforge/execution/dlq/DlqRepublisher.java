@@ -16,7 +16,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Rebuilds and sends DLQ records (dlq-rules.md, ADR-0529). A replayable record republishes to the
+ * Rebuilds and sends DLQ records (ADR-0529). A replayable record republishes to the
  * main topic with a fresh {@code x-message-id} — reusing the original would be ack-skipped by inbox
  * dedup (claim commits before step execution) and never re-execute. Step-level idempotency
  * ({@code scenario:replay_version:step_id}) re-runs only the failed step; same replay_version still

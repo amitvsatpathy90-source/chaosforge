@@ -6,7 +6,7 @@ package io.chaosforge.controlplane.ai;
  * no stack trace — only the failure shape. Widening this type widens the PII egress surface;
  * don't, without revisiting ADR-0519.
  *
- * @param dlqReason        {@code x-dlq-reason} header (dlq-rules.md taxonomy), or {@code "unknown"}
+ * @param dlqReason        {@code x-dlq-reason} header (ADR-0529 taxonomy), or {@code "unknown"}
  * @param exceptionSummary first line of the dead-letter exception message, length-capped; never a stack trace
  * @param originalTopic    the topic the record failed on (transport metadata, not payload)
  * @param dlqAttempt       {@code x-dlq-attempt} retry counter, 0 if absent

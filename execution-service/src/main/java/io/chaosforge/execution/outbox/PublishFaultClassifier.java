@@ -14,7 +14,7 @@ import org.apache.kafka.common.errors.SerializationException;
  * row stays PENDING on capped backoff under the relay-lag alerts.
  *
  * <p><b>The safe default here is retain-and-retry, the opposite of the consumer DLQ's fail-closed
- * default</b> (dlq-rules.md routes unmapped consumer failures to {@code SCHEMA_INVALID}): a consumer
+ * default</b> (ADR-0529 routes unmapped consumer failures to {@code SCHEMA_INVALID}): a consumer
  * record survives in the DLQ topic either way, but a producer-side DEAD verdict silently strands the
  * result event until a human resurrects the row. Misclassifying poison as retryable costs an alert;
  * misclassifying an outage as poison costs a mass-DEAD event and manual data repair.

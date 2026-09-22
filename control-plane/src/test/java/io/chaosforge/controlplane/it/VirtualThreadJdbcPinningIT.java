@@ -24,7 +24,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * thread pinning == 0 under load").
  *
  * <p><b>What it proves.</b> The CP runs MVC on Java 21 virtual threads with JDBC executed directly on
- * the request VT (architecture specifications "option 1 — accept pinning"; there is no dedicated {@code jdbcExecutor}).
+ * the request VT. There is no dedicated {@code jdbcExecutor}.
  * On JDK 21 a {@code synchronized} section that blocks pins its carrier, so whether this is actually
  * safe hinges on whether the real driver+pool stack holds a monitor across a blocking call. This test
  * <i>measures</i> that empirically instead of asserting it: it drives an adversarial JDBC workload —

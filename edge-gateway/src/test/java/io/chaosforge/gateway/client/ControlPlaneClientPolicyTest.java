@@ -29,7 +29,7 @@ import org.springframework.web.reactive.function.client.WebClient;
  *   <li>the loader calls the peer-authenticated <b>internal</b> path {@code /internal/tenants/{id}/policy}
  *       (process identity, not a user JWT — the cache refreshes outside any request context);</li>
  *   <li>a healthy response yields the CP-configured policy (not the default) + a success counter;</li>
- *   <li>failure stays fail-open (default policy; architecture specifications posture) but is now <b>observable</b> —
+ *   <li>failure stays fail-open (default policy) but is now <b>observable</b> —
  *       the {@code chaosforge.gateway.policy_load{outcome="fallback"}} counter increments. The 401
  *       case is the exact regression that hid the original defect.</li>
  * </ul>

@@ -13,7 +13,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 /**
- * DLQ retry consumer (dlq-rules.md, ADR-0529) — a <b>separate</b> consumer group, the only component
+ * DLQ retry consumer (ADR-0529) — a <b>separate</b> consumer group, the only component
  * permitted to republish to the main topic. Reads {@code <command-topic>.DLQ}; republishes only the
  * replayable reasons ({@code INFRA_TRANSIENT}, {@code STEP_TIMEOUT}) with exponential backoff + full
  * jitter; parks exhausted records as {@code RETRY_EXHAUSTED}; leaves hard-poison records untouched for

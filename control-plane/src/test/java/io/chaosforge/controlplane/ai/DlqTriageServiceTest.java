@@ -13,7 +13,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Docker-free contract test for the advisory triage service (ai-rules.md Tier 2). */
+/** Docker-free contract test for the advisory triage service (ADR-0518 surface 2). */
 class DlqTriageServiceTest {
 
     private static final DlqEnvelope ENVELOPE =

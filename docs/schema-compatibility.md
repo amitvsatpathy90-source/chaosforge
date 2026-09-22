@@ -27,7 +27,7 @@ genuinely *transitive* — it rejects a change that is FULL against its immediat
 against an older ancestor, which a plain-FULL (pairwise-latest) check would wave through.
 
 Evolution rules and the expand–contract workflow live in
-[`.architecture specifications/rules/schema-rules.md`](../.architecture specifications/rules/schema-rules.md) and
+[`ADR-0527`](adrs/ADR-0527.md) and
 [`avro-history/README.md`](../chaosforge-avro-schemas/src/test/resources/avro-history/README.md).
 
 ---
@@ -70,4 +70,4 @@ There is no live Apicurio registry in the test path — the gate checks against 
 `avro-history/` (the registry's job, done locally and deterministically). In a real pipeline the same
 `FULL_TRANSITIVE` level is also set on the Apicurio subject, and the CI gate is the pre-flight that
 makes a registry rejection impossible at deploy time. Apicurio must be HA before the Control Plane
-scales beyond one replica (see architecture specifications Known Limitations).
+scales beyond one replica.

@@ -59,7 +59,7 @@ class DeploymentPostureGuardTest {
     @Test
     void guardIsScopedToTheOutboundLeg_notThePublicListener() {
         // The gateway's public listener is HTTP BY DESIGN (it would need a public CA cert; TLS terminates
-        // upstream — ADR-0531, architecture specifications §Known Limitations). A fully-hardened verdict here must therefore
+        // upstream — ADR-0531). A fully-hardened verdict here must therefore
         // be reachable with NO server-side TLS configured at all. If someone later copies the CP/exec
         // server.ssl / client-auth=need checks into this guard, this test fails — which is the point:
         // client-auth=need on a public ingress would reject every real client.

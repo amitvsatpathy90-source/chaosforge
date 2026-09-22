@@ -1,6 +1,6 @@
 # ADR Index
 
-Single source of truth for ChaosForge's Architectural Decision Records. Root `README.md` and `architecture specification` links
+Single source of truth for ChaosForge's Architectural Decision Records. Root `README.md` links
 here instead of duplicating this table.
 
 | ID | Decision | File |

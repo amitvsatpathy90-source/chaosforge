@@ -1,6 +1,6 @@
 server:
   port: 8082
-  # NOTE (mtls-rules.md): mTLS is mandatory outside the lab (client-auth: need). Left off for dev/tests.
+  # NOTE (ADR-0531): mTLS is mandatory outside the lab (client-auth: need). Left off for dev/tests.
 
 spring:
   application:
@@ -74,7 +74,7 @@ chaosforge:
   # A marker cannot cover its own omission — that residual is carried by the chaosforge.security.hardened
   # gauge, which is emitted unconditionally. Alert on == 0 outside the lab.
   deployment: ${CHAOSFORGE_DEPLOYMENT:lab}
-  # JWT claim validation on top of signature+exp (mtls-rules.md contract: signature, exp, iss, aud):
+  # JWT claim validation on top of signature+exp (ADR-0524 contract: signature, exp, iss, aud):
   # iss is an exact-string match, aud must contain this value. Lab defaults match what
   # docker/jwks/mint-jwt.sh stamps; a real IdP overrides via JWT_ISSUER/JWT_AUDIENCE.
   security:
@@ -130,13 +130,13 @@ chaosforge:
     sweep:
       interval-ms: 60000
       incomplete-after-seconds: 360   # 300s (max.poll.interval.ms) + 60s grace
-  # SSRF / blast-radius guard on every scenario target the executor calls (arch-audit HIGH-2). OFF here
+  # SSRF / blast-radius guard on every scenario target the executor calls (ADR-0534). OFF here
   # so dev/tests/local-Compose can target localhost; a deployed profile MUST enable it and pin the
-  # allowlist to the sanctioned system(s) under test — see application-mtls.yml + target-validation-rules.md.
+  # allowlist to the sanctioned system(s) under test — see application-mtls.yml.
   target:
     block-private-networks: ${TARGET_BLOCK_PRIVATE:false}   # true → reject localhost/metadata/RFC1918
     allowed-hosts: ${TARGET_ALLOWED_HOSTS:}                  # empty = any public host; set = hard ceiling
-  # DLQ retry consumer (dlq-rules.md, ADR-0529): a SEPARATE group that republishes ONLY the replayable
+  # DLQ retry consumer (ADR-0529): a SEPARATE group that republishes ONLY the replayable
   # reasons (INFRA_TRANSIENT, STEP_TIMEOUT) to the main topic with a FRESH message_id + exponential
   # backoff and full jitter. cap-backoff is bounded well below max.poll.interval.ms (5m) so the repair
   # lane never sleeps long enough to trigger a rebalance.
