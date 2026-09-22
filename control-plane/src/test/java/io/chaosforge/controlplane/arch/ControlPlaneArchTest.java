@@ -52,8 +52,8 @@ class ControlPlaneArchTest {
 
     @Test
     void documentedControlPlaneSliMetricsAreEmitted() throws IOException {
-        // The SLIs table in architecture specifications is only trustworthy if every name it lists actually appears in
-        // code. architecture specifications is gitignored so a test can't read it — instead we pin the CP-emitted side:
+        // The SLIs table is only trustworthy if every name it lists actually appears in
+        // code. It is gitignored so a test can't read it — instead we pin the CP-emitted side:
         // if one of these literals is renamed, this fails and forces the table to be updated too.
         // (Exec-emitted SLIs are guarded the same way in ExecutionServiceArchTest.)
         for (String metric : List.of(
@@ -62,7 +62,7 @@ class ControlPlaneArchTest {
                 "outbox.pending_outside_claim_window", "outbox.lease_takeovers",
                 "chaosforge.partition.default_rows", "db.schema.migrations.pending")) {
             assertThat(mainSourcesContaining('"' + metric + '"'))
-                    .as("SLI metric %s named in architecture specifications must be emitted by control-plane", metric)
+                    .as("SLI metric %s must be emitted by control-plane", metric)
                     .isNotEmpty();
         }
     }

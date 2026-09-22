@@ -64,7 +64,7 @@ management:
       application: edge-gateway
 
 # Reactive Resilience4j on the upstream CP path. Per-instance config only — NO configs.default
-# (every boundary is explicit; architecture specifications: "no global defaults"). The 3s timeout is a Reactor
+# (every boundary is explicit; no global defaults). The 3s timeout is a Reactor
 # .timeout() (→ TimeoutException). 409 is NOT recorded — it passes through as non-fault.
 resilience4j:
   circuitbreaker:
