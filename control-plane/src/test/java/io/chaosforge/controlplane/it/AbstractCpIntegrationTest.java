@@ -36,7 +36,11 @@ import org.testcontainers.utility.DockerImageName;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-        properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
+        properties = {
+                "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",
+                // Bound the shared Testcontainers PostgreSQL pool per cached test to avoid connection exhaustion
+                "spring.datasource.hikari.maximum-pool-size=5",
+                "spring.datasource.hikari.minimum-idle=0"})
 @EmbeddedKafka(partitions = 1, topics = "chaosforge.scenario.commands.v1")
 @Import(AbstractCpIntegrationTest.CpTestSupportConfig.class)
 abstract class AbstractCpIntegrationTest {
