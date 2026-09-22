@@ -5,9 +5,13 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,13 +23,22 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Re-verifies the original JWT forwarded by the gateway and derives {@code tenant_id} from the
+ * Re-verifies the original JWT forwarded by the gateway and derives the {@code tenant_id} from
  * VERIFIED claims (ADR-0524). mTLS authenticates the channel peer (the gateway); this filter
  * authenticates the principal (the tenant). The {@code X-Tenant-Id} header is never trusted here.
+ *
+ * <p>Reused by the MCP security chain; additionally maps the allow-listed
+ * {@code chaosforge.*} scopes to {@code SCOPE_*} authorities.
  */
 public class JwtTenantExtractionFilter extends OncePerRequestFilter {
 
     private final JwtDecoder jwtDecoder;
+
+    // Only MCP-relevant scopes become authorities; unrelated IdP scopes remain inert.
+    private static final Set<String> KNOWN_SCOPES = Set.of(
+            "chaosforge.read",
+            "chaosforge.operate",
+            "chaosforge.dlq");
 
     public JwtTenantExtractionFilter(JwtDecoder jwtDecoder) {
         this.jwtDecoder = jwtDecoder;
@@ -70,11 +83,24 @@ public class JwtTenantExtractionFilter extends OncePerRequestFilter {
 
     private static Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
         List<String> roles = jwt.getClaimAsStringList("roles");
-        if (roles == null) {
-            return List.of();
+
+        // Combine existing role authorities with MCP scope authorities.
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        if (roles != null) {
+            authorities.addAll(roles.stream()
+                    .map(r -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + r))
+                    .toList());
         }
-        return roles.stream()
-                .map(r -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + r))
-                .toList();
+
+        String scope = jwt.getClaimAsString("scope");
+        if (scope != null && !scope.isBlank()) {
+            // MCP scopes are space-delimited; only the closed ChaosForge set becomes authorities.
+            for (String value : scope.trim().split("\\s+")) {
+                if (KNOWN_SCOPES.contains(value)) {
+                    authorities.add(new SimpleGrantedAuthority("SCOPE_" + value));
+                }
+            }
+        }
+        return authorities;
     }
 }
