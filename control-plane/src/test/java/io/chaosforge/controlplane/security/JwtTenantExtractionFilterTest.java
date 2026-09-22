@@ -90,6 +90,64 @@ class JwtTenantExtractionFilterTest {
                 .containsExactly("SCOPE_chaosforge.read");
     }
 
+    /**
+     * A token without a scope claim must not produce any MCP scope authorities.
+     */
+    @Test
+    void missingScopeClaim_noScopeAuthorities() throws Exception {
+        Authentication authentication = authenticate(
+                jwt().build());
+
+        assertThat(authorityNames(authentication))
+                .isEmpty();
+    }
+
+    /**
+     * Roles and MCP scopes are additive; scope mapping must preserve existing role authorities.
+     */
+    @Test
+    void rolesAndScope_bothMapped() throws Exception {
+        Authentication authentication = authenticate(
+                jwt()
+                        .claim("roles", List.of("OPERATOR"))
+                        .claim("scope", "chaosforge.operate")
+                        .build());
+
+        assertThat(authorityNames(authentication))
+                .containsExactlyInAnyOrder(
+                        "ROLE_OPERATOR",
+                        "SCOPE_chaosforge.operate");
+    }
+
+    /**
+     * Leading, trailing, and repeated whitespace must not affect allow-listed scope parsing.
+     */
+    @Test
+    void scopeWithExtraWhitespace_parsedCorrectly() throws Exception {
+        Authentication authentication = authenticate(
+                jwt().claim(
+                                "scope",
+                                "  chaosforge.read   chaosforge.dlq  ")
+                        .build());
+
+        assertThat(authorityNames(authentication))
+                .containsExactlyInAnyOrder(
+                        "SCOPE_chaosforge.read",
+                        "SCOPE_chaosforge.dlq");
+    }
+
+    /**
+     * An explicitly empty scope claim must not produce any MCP scope authorities.
+     */
+    @Test
+    void emptyScopeString_noScopeAuthorities() throws Exception {
+        Authentication authentication = authenticate(
+                jwt().claim("scope", "").build());
+
+        assertThat(authorityNames(authentication))
+                .isEmpty();
+    }
+
 // Test helpers: exercise the real filter contract and expose only the resulting authorities.
 
     private Authentication authenticate(Jwt jwt) throws IOException, ServletException {
