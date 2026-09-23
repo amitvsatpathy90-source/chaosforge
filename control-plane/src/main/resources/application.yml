@@ -142,7 +142,7 @@ chaosforge:
         # MCP is exposed through the existing CP MVC application at /mcp.
         # SYNC is intentional: TenantContext is a ThreadLocal and the first
         # MCP capability must execute on the authenticated request thread.
-        protocol: STREAMABLE
+        protocol: STATELESS
         type: SYNC
         name: chaosforge-control-plane
         version: 1.0.0
@@ -158,9 +158,6 @@ chaosforge:
           resource: false
           prompt: false
           completion: false
-
-        streamable-http:
-          mcp-endpoint: /mcp
 
     # Optional global allowlist for AI-proposed target hosts. Empty = SSRF guard only (lab); a
     # per-tenant tenant_targets table is the deferred enhancement (TenantTargetValidator).

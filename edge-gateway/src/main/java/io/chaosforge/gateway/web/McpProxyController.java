@@ -16,7 +16,6 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/mcp")
 public class McpProxyController {
 
-    private static final String MCP_SESSION_ID = "Mcp-Session-Id";
     private final ControlPlaneClient controlPlane;
 
     public McpProxyController(ControlPlaneClient controlPlane) {
@@ -32,15 +31,13 @@ public class McpProxyController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
             @RequestHeader(HttpHeaders.CONTENT_TYPE) String contentType,
             @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept,
-            @RequestHeader(value = "MCP-Protocol-Version", required = false) String protocolVersion,
-            @RequestHeader(value = MCP_SESSION_ID, required = false) String mcpSessionId) {
+            @RequestHeader(value = "MCP-Protocol-Version", required = false) String protocolVersion) {
 
         return controlPlane.forwardMcp(
                 body,
                 authorization,
                 contentType,
                 accept,
-                protocolVersion,
-                mcpSessionId);
+                protocolVersion);
     }
 }

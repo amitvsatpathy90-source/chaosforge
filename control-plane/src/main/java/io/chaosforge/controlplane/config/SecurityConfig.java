@@ -97,7 +97,9 @@ public class SecurityConfig {
      * <p>The existing {@link JwtTenantExtractionFilter} is reused so MCP requests populate the same
      * verified TenantContext and ROLE_* authorities as the normal API path.
      *
-     * <p>Tool-level scope authorization is intentionally out of this batch; no MCP tools exist yet.
+     * <p>Tool-level scope authorization is enforced per-tool via {@code @PreAuthorize} on the
+     + {@code @McpTool}-annotated method (see {@code ScenarioMcpTools}), not here — this chain
+     + only establishes transport-level authentication and tenant binding.
      */
     @Bean
     @Order(2)

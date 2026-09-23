@@ -55,9 +55,6 @@ public class ControlPlaneClient {
     // Negotiated MCP protocol version; forward it to CP unchanged.
     private static final String MCP_PROTOCOL_VERSION = "MCP-Protocol-Version";
 
-    // Stateful Streamable HTTP session identifier; preserve it across MCP requests.
-    private static final String MCP_SESSION_ID = "Mcp-Session-Id";
-
     private final WebClient webClient;
     private final CircuitBreaker proxyCb;
     private final Bulkhead proxyBulkhead;
@@ -145,8 +142,7 @@ public class ControlPlaneClient {
             String authorization,
             String contentType,
             String accept,
-            String protocolVersion,
-            String mcpSessionId) {
+            String protocolVersion) {
 
         return webClient.post()
                 .uri("/mcp")
@@ -159,9 +155,6 @@ public class ControlPlaneClient {
                     }
                     if (protocolVersion != null) {
                         headers.set(MCP_PROTOCOL_VERSION, protocolVersion);
-                    }
-                    if (mcpSessionId != null) {
-                        headers.set(MCP_SESSION_ID, mcpSessionId);
                     }
                 })
                 .body(BodyInserters.fromDataBuffers(body))
