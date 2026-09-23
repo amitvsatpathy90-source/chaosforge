@@ -1,8 +1,11 @@
 package io.chaosforge.controlplane.mcp;
 
 import io.chaosforge.controlplane.domain.Scenario;
+import io.chaosforge.controlplane.error.ResourceNotFoundException;
 import io.chaosforge.controlplane.service.ScenarioService;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,6 +26,8 @@ import org.springframework.stereotype.Component;
 public class ScenarioMcpTools {
 
     private final ScenarioService scenarioService;
+
+    private static final Logger log = LoggerFactory.getLogger(ScenarioMcpTools.class);
 
     public ScenarioMcpTools(ScenarioService scenarioService) {
         this.scenarioService = scenarioService;
@@ -49,18 +54,29 @@ public class ScenarioMcpTools {
                     description = "Scenario UUID to retrieve.",
                     required = true)
             UUID scenarioId) {
+        try {
+            Scenario s = scenarioService.get(scenarioId);
+            long replayVersion = scenarioService.replayVersion(scenarioId);
 
-        Scenario scenario = scenarioService.get(scenarioId);
-        long replayVersion = scenarioService.replayVersion(scenarioId);
-
-        return new ScenarioResponse(
-                scenario.scenarioId(),
-                scenario.tenantId(),
-                scenario.name(),
-                scenario.ruleSetId(),
-                scenario.ruleSetVersion(),
-                scenario.status(),
-                replayVersion);
+            return new ScenarioResponse(
+                    s.scenarioId(),
+                    s.tenantId(),
+                    s.name(),
+                    s.ruleSetId(),
+                    s.ruleSetVersion(),
+                    s.status(),
+                    replayVersion
+            );
+        } catch (ResourceNotFoundException e) {
+            // Already proven safe/indistinguishable (ADR-0510, ScenarioMcpToolIsolationIT) —
+            // let it surface via the MCP engine's default in-band wrapping unchanged.
+            throw e;
+        } catch (RuntimeException e) {
+            // The MCP engine puts e.getMessage() verbatim in the client-visible response —
+            // an unfiltered internal exception (SQL text, config) must not reach the client.
+            log.error("get_scenario failed for scenarioId={}", scenarioId, e);
+            throw new IllegalStateException("internal error retrieving scenario");
+        }
     }
 
     /**
@@ -70,12 +86,13 @@ public class ScenarioMcpTools {
      * transport contracts and should not become coupled merely because their payloads are
      * currently similar.
      */
-    public record ScenarioResponse(
+    record ScenarioResponse(
             UUID scenarioId,
             UUID tenantId,
             String name,
             UUID ruleSetId,
             int ruleSetVersion,
             String status,
-            long replayVersion) {}
+            long replayVersion) {
+    }
 }

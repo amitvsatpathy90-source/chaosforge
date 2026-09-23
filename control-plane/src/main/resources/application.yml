@@ -77,6 +77,30 @@ spring:
           temperature: 0.2
           format: json                  # structured-output mode for BeanOutputConverter
 
+    # MCP server config: exposes read-only ChaosForge tools (ScenarioMcpTools) to MCP clients
+    # over /mcp, reached only via the Gateway proxy — never a direct public endpoint.
+    mcp:
+      server:
+        # MCP is exposed through the existing CP MVC application at /mcp.
+        # SYNC is intentional: TenantContext is a ThreadLocal and the first
+        # MCP capability must execute on the authenticated request thread.
+        protocol: STATELESS
+        type: SYNC
+        name: chaosforge-control-plane
+        version: 1.0.0
+
+        # Keep annotation-based registration explicit even though the starter
+        # enables it by default. This makes the tool-registration contract visible.
+        annotation-scanner:
+          enabled: true
+
+        # Batch 4 exposes tools only. Resources/prompts/completions remain deferred.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
 chaosforge:
   # Deployment posture marker (arch-audit F2), asserted by DeploymentPostureGuard at startup.
   #   lab      — permissive; plain HTTP, /internal permitAll, SSRF guard inert. The DEFAULT, because no
@@ -102,9 +126,10 @@ chaosforge:
   outbox:
     poll-interval-ms: 1000
     batch-size: 64
-    max-attempts: 8           # record-FATAL rows crossing this are quarantined as DEAD (ADR-0528; alert,
-                              # not DLQ). Broker-global failures never DEAD — they back off at the cap
-                              # under the relay-lag alerts (an outage must not force manual data repair).
+    # record-FATAL rows crossing this are quarantined as DEAD (ADR-0528; alert, not DLQ).
+    # Broker-global failures never DEAD — they back off at the cap under the relay-lag
+    # alerts (an outage must not force manual data repair).
+    max-attempts: 8
     lease-seconds: 30         # claim visibility timeout; must exceed send-timeout-ms
     send-timeout-ms: 10000    # ONE shared harvest deadline per pipelined batch (not per record)
     base-backoff-seconds: 2
@@ -137,28 +162,6 @@ chaosforge:
       chunk-size: 500            # short tx; stays well under statement_timeout (5s)
       max-chunks-per-run: 1000   # ≤ 500k rows/run; remainder taken next run
   ai:
-    mcp:
-      server:
-        # MCP is exposed through the existing CP MVC application at /mcp.
-        # SYNC is intentional: TenantContext is a ThreadLocal and the first
-        # MCP capability must execute on the authenticated request thread.
-        protocol: STATELESS
-        type: SYNC
-        name: chaosforge-control-plane
-        version: 1.0.0
-
-        # Keep annotation-based registration explicit even though the starter
-        # enables it by default. This makes the tool-registration contract visible.
-        annotation-scanner:
-          enabled: true
-
-        # Batch 4 exposes tools only. Resources/prompts/completions remain deferred.
-        capabilities:
-          tool: true
-          resource: false
-          prompt: false
-          completion: false
-
     # Optional global allowlist for AI-proposed target hosts. Empty = SSRF guard only (lab); a
     # per-tenant tenant_targets table is the deferred enhancement (TenantTargetValidator).
     allowed-target-hosts: ${AI_ALLOWED_TARGET_HOSTS:}

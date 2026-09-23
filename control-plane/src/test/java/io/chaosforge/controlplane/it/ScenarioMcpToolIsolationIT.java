@@ -5,7 +5,6 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
@@ -19,7 +18,6 @@ import io.chaosforge.controlplane.service.ScenarioService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,8 +50,6 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
 
     @MockitoBean(name = "mcpJwtDecoder")
     private JwtDecoder mcpJwtDecoder;
-
-    @Autowired ApplicationContext ctx;
 
     @Autowired
     private WebApplicationContext wac;
@@ -111,15 +107,16 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
 
         // Normalize the JSON-RPC request "id" echo only — every other byte (error code, message, any
         // data field) must match exactly.
-        assertThat(normalizeRequestId(crossTenantBody))
+        assertThat(normalizeResponse(crossTenantBody))
                 .as("a cross-tenant scenarioId must be indistinguishable from a nonexistent one")
-                .isEqualTo(normalizeRequestId(nonexistentBody));
+                .isEqualTo(normalizeResponse(nonexistentBody));
     }
 
     /** Positive control — proves the chain wires up before trusting the isolation test above. */
     @Test
     void ownerToken_withReadScope_returnsOwnScenario() throws Exception {
         mvc.perform(mcpToolCall(ownerScenarioId, OWNER_READ_TOKEN))
+                //.andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString(ownerScenarioId.toString())))
                 .andExpect(content().string(containsString(owner.toString())));
@@ -132,22 +129,11 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
     @Test
     void ownerToken_withoutReadScope_isDeniedNotLeaked() throws Exception {
         String body = mvc.perform(mcpToolCall(ownerScenarioId, OWNER_WRONG_SCOPE_TOKEN))
-                .andDo(print())
                 .andReturn().getResponse().getContentAsString();
 
         assertThat(body)
                 .as("a scope-denied call must never return the scenario it was denied access to")
                 .doesNotContain(ownerScenarioId.toString());
-    }
-
-    @Test
-    void diagnostic_mcpRouterFunctionBeanExists() {
-        System.out.println("RouterFunction beans: "
-                + java.util.Arrays.toString(ctx.getBeanNamesForType(
-                org.springframework.web.servlet.function.RouterFunction.class)));
-        System.out.println("McpStatelessServerTransport beans: "
-                + java.util.Arrays.toString(ctx.getBeanNamesForType(
-                Class.forName("org.springframework.ai.mcp.server.stateless.WebMvcStatelessServerTransport"))));
     }
 
     /** JSON-RPC tools/call POST for get_scenario. */
@@ -162,13 +148,14 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 // STATELESS protocol: no SSE stream — a plain JSON response is expected, not
                 // text/event-stream (see application.yml chaosforge.ai.mcp.server.protocol).
-                .accept(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
                 .content(jsonRpcBody);
     }
 
-    /** Strips the JSON-RPC id echo so a non-constant id later doesn't break the equality check. */
-    private static String normalizeRequestId(String jsonRpcResponseBody) {
-        return jsonRpcResponseBody.replaceAll("\"id\"\\s*:\\s*\\d+", "\"id\":0");
+    private static String normalizeResponse(String jsonRpcResponseBody) {
+        return jsonRpcResponseBody
+                .replaceAll("\"id\"\\s*:\\s*\\d+", "\"id\":0")
+                .replaceAll("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "<uuid>");
     }
 
     private static Jwt jwtFor(UUID tenantId, String scope) {
