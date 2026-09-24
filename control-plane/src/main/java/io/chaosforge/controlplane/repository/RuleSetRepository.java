@@ -1,6 +1,9 @@
 package io.chaosforge.controlplane.repository;
 
 import io.chaosforge.controlplane.domain.RuleSet;
+
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jdbc.repository.query.Modifying;
@@ -25,4 +28,20 @@ public interface RuleSetRepository extends Repository<RuleSet, UUID> {
 
     @Query("SELECT coalesce(max(version), 0) FROM rule_sets WHERE rule_set_id = :ruleSetId AND tenant_id = :tenantId")
     int currentMaxVersion(@Param("ruleSetId") UUID ruleSetId, @Param("tenantId") UUID tenantId);
+
+    // Metadata-only keyset page; definition stays NULL so no jsonb is read.
+    @Query("SELECT rule_set_id, version, tenant_id, name, NULL::text AS definition, created_at "
+            + "FROM rule_sets WHERE tenant_id = :tenantId "
+            + "AND (CAST(:cursorCreatedAt AS TIMESTAMPTZ) IS NULL "
+            + "OR (created_at, rule_set_id, version) < "
+            + "(CAST(:cursorCreatedAt AS TIMESTAMPTZ), CAST(:cursorRuleSetId AS UUID), "
+            + "CAST(:cursorVersion AS INTEGER))) "
+            + "ORDER BY created_at DESC, rule_set_id DESC, version DESC LIMIT :limit")
+    List<RuleSet> findPageByTenantId(
+            @Param("tenantId") UUID tenantId,
+            @Param("cursorCreatedAt") Instant cursorCreatedAt,
+            @Param("cursorRuleSetId") UUID cursorRuleSetId,
+            @Param("cursorVersion") Integer cursorVersion,
+            @Param("limit") int limit);
 }
+

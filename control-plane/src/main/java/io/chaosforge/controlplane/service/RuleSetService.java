@@ -8,6 +8,8 @@ import io.chaosforge.controlplane.domain.RuleSet;
 import io.chaosforge.controlplane.error.ResourceNotFoundException;
 import io.chaosforge.controlplane.repository.RuleSetRepository;
 import io.chaosforge.controlplane.security.TenantContext;
+
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +24,9 @@ public class RuleSetService {
     private final RuleSetRepository repository;
     private final TargetUrlGuard targetUrlGuard;
     private final ObjectMapper objectMapper;
+
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 200;
 
     public RuleSetService(RuleSetRepository repository, TargetUrlGuard targetUrlGuard,
                           ObjectMapper objectMapper) {
@@ -74,4 +79,31 @@ public class RuleSetService {
                 .map(RuleSet::definition)
                 .orElseThrow(() -> new ResourceNotFoundException(ruleSetId));
     }
+
+    /** Metadata-only page: {@code definition()} is null on every returned row. */
+    public RuleSetPage list(int limit, String cursor) {
+        UUID tenantId = TenantContext.require();
+        int boundedLimit = limit <= 0 ? DEFAULT_PAGE_SIZE : Math.min(limit, MAX_PAGE_SIZE);
+
+        Instant cursorCreatedAt = null;
+        UUID cursorRuleSetId = null;
+        Integer cursorVersion = null;
+        if (cursor != null && !cursor.isBlank()) {
+            RuleSetPageCursor decoded = RuleSetPageCursor.decode(cursor);
+            cursorCreatedAt = decoded.createdAt();
+            cursorRuleSetId = decoded.ruleSetId();
+            cursorVersion = decoded.version();
+        }
+
+        // Fetch one extra row to detect a next page without a second query.
+        List<RuleSet> rows = repository.findPageByTenantId(
+                tenantId, cursorCreatedAt, cursorRuleSetId, cursorVersion, boundedLimit + 1);
+
+        boolean hasMore = rows.size() > boundedLimit;
+        List<RuleSet> page = hasMore ? rows.subList(0, boundedLimit) : rows;
+        return new RuleSetPage(page, hasMore ? RuleSetPageCursor.encode(page.getLast()) : null);
+    }
+
+    public record RuleSetPage(List<RuleSet> items, String nextCursor) {}
+
 }

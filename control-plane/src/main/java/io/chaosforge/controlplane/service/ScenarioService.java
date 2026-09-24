@@ -44,7 +44,7 @@ public class ScenarioService {
 
     public ScenarioPage list (int limit, String cursor) {
         UUID tenantId = TenantContext.require();
-        int boundedLimit = limit<=0?DEFAULT_PAGE_SIZE:Math.min(limit, MAX_PAGE_SIZE);
+        int boundedLimit = limit <= 0 ? DEFAULT_PAGE_SIZE : Math.min(limit, MAX_PAGE_SIZE);
 
         Instant cursorCreatedAt = null;
         UUID cursorScenarioId = null;
