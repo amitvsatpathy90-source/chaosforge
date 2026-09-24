@@ -136,6 +136,37 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
                 .doesNotContain(ownerScenarioId.toString());
     }
 
+    /** Positive control for list_scenarios — mirrors {@link #ownerToken_withReadScope_returnsOwnScenario}. */
+    @Test
+    void ownerToken_withReadScope_listReturnsOwnScenario() throws Exception {
+        mvc.perform(mcpListCall(OWNER_READ_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString(ownerScenarioId.toString())))
+                .andExpect(content().string(containsString(owner.toString())));
+    }
+
+    /** list_scenarios must never leak another tenant's rows through the MCP transport. */
+    @Test
+    void otherTenantToken_withReadScope_listNeverContainsOwnersScenario() throws Exception {
+        String body = mvc.perform(mcpListCall(OTHER_TENANT_READ_TOKEN))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(body)
+                .as("a different tenant's list_scenarios call must never contain the owner's scenario")
+                .doesNotContain(ownerScenarioId.toString());
+    }
+
+    /** Scope enforcement for list_scenarios — mirrors {@link #ownerToken_withoutReadScope_isDeniedNotLeaked}. */
+    @Test
+    void ownerToken_withoutReadScope_listIsDeniedNotLeaked() throws Exception {
+        String body = mvc.perform(mcpListCall(OWNER_WRONG_SCOPE_TOKEN))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(body)
+                .as("a scope-denied list call must never return the scenario it was denied access to")
+                .doesNotContain(ownerScenarioId.toString());
+    }
+
     /** JSON-RPC tools/call POST for get_scenario. */
     private static MockHttpServletRequestBuilder mcpToolCall(UUID scenarioId, String bearerToken) {
         String jsonRpcBody = """
@@ -148,6 +179,20 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 // STATELESS protocol: no SSE stream — a plain JSON response is expected, not
                 // text/event-stream (see application.yml chaosforge.ai.mcp.server.protocol).
+                .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
+                .content(jsonRpcBody);
+    }
+
+    /** JSON-RPC tools/call POST for list_scenarios (no arguments needed for these isolation cases). */
+    private static MockHttpServletRequestBuilder mcpListCall(String bearerToken) {
+        String jsonRpcBody = """
+                {"jsonrpc":"2.0","id":1,"method":"tools/call",\
+                "params":{"name":"list_scenarios","arguments":{}}}\
+                """;
+
+        return post("/mcp")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
+                .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
                 .content(jsonRpcBody);
     }

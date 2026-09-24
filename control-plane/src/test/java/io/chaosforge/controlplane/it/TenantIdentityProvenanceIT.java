@@ -3,6 +3,7 @@ package io.chaosforge.controlplane.it;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -161,16 +163,19 @@ class TenantIdentityProvenanceIT extends AbstractCpIntegrationTest {
     /**
      * The MCP resource accepts only a token validated by the dedicated MCP decoder.
      *
-     * <p>The endpoint itself does not need to exist: a 404 proves authentication and tenant extraction
-     * completed, while the MCP security boundary still remains isolated from the normal /v1 decoder.
+     * <p>A real {@code tools/list} call proves the router is actually registered at {@code /mcp} —
+     * a fake path would 404 regardless of whether MCP was wired at all.
      */
     @Test
     void mcpAudienceToken_reachesMcpChain() throws Exception {
         when(mcpJwtDecoder.decode(MCP_TOKEN)).thenReturn(jwtFor(other));
 
-        mvc.perform(get("/mcp/probe")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN)))
-                .andExpect(status().isNotFound());
+        mvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"))
+                .andExpect(status().isOk());
     }
 
     /**

@@ -6,6 +6,8 @@ import io.chaosforge.controlplane.domain.Scenario;
 import io.chaosforge.controlplane.error.ResourceNotFoundException;
 import io.chaosforge.controlplane.repository.ScenarioRepository;
 import io.chaosforge.controlplane.security.TenantContext;
+
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,9 @@ public class ScenarioService {
 
     private final ScenarioRepository repository;
     private final TwoLevelCache<Scenario> scenarioCache;
+
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 200;
 
     public ScenarioService(ScenarioRepository repository, TwoLevelCache<Scenario> scenarioCache) {
         this.repository = repository;
@@ -37,9 +42,31 @@ public class ScenarioService {
                         .orElseThrow(() -> new ResourceNotFoundException(scenarioId)));
     }
 
-    public List<Scenario> list() {
-        return repository.findAllByTenantId(TenantContext.require());
+    public ScenarioPage list (int limit, String cursor) {
+        UUID tenantId = TenantContext.require();
+        int boundedLimit = limit<=0?DEFAULT_PAGE_SIZE:Math.min(limit, MAX_PAGE_SIZE);
+
+        Instant cursorCreatedAt = null;
+        UUID cursorScenarioId = null;
+
+        if (cursor != null && !cursor.isBlank()) {
+            ScenarioPageCursor decodedCursor = ScenarioPageCursor.decode(cursor);
+            cursorCreatedAt = decodedCursor.createdAt();
+            cursorScenarioId = decodedCursor.scenarioId();
+        }
+
+        // Fetch one extra row to detect a next page without a second round-trip.
+        List<Scenario> rows =
+                repository.findPageByTenantId(tenantId, cursorCreatedAt, cursorScenarioId, boundedLimit + 1);
+
+        boolean hasMore = rows.size() > boundedLimit;
+        List<Scenario> page = hasMore ? rows.subList(0, boundedLimit) : rows;
+        String nextCursor = hasMore ? ScenarioPageCursor.encode(page.getLast()) : null;
+
+        return new ScenarioPage(page, nextCursor);
     }
+
+    public record ScenarioPage(List<Scenario> items, String nextCursor){}
 
     /** Current fencing token for the ETag — read FRESH (never cached); it changes on every replay. */
     public long replayVersion(UUID scenarioId) {

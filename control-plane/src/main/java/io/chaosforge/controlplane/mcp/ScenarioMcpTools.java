@@ -1,9 +1,15 @@
 package io.chaosforge.controlplane.mcp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.chaosforge.controlplane.domain.Scenario;
 import io.chaosforge.controlplane.error.ResourceNotFoundException;
 import io.chaosforge.controlplane.service.ScenarioService;
+import io.chaosforge.controlplane.service.ScenarioService.ScenarioPage;
+
+import java.util.List;
 import java.util.UUID;
+
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -78,6 +84,55 @@ public class ScenarioMcpTools {
             throw new IllegalStateException("internal error retrieving scenario");
         }
     }
+
+    /**
+     * Paginated read capability for the authenticated tenant.
+     *
+     * <p>Uses the same service-level cursor semantics as REST and the same MCP read scope as get_scenario.
+     */
+    @PreAuthorize("hasAuthority('SCOPE_chaosforge.read')")
+    @McpTool(
+            name = "list_scenarios",
+            description = "List ChaosForge scenarios for the authenticated tenant, paginated.",
+            generateOutputSchema = true,
+            annotations = @McpTool.McpAnnotations(
+                    readOnlyHint = true,
+                    destructiveHint = false,
+                    openWorldHint = false))
+    public ScenarioListResult listScenarios(
+            @McpToolParam(
+                    description = "Max results per page (default 50, max 200).",
+                    required = false)
+            Integer limit,
+            @McpToolParam(
+                    description = "Opaque cursor from a prior call's nextCursor, for the next page.",
+                    required = false)
+            String cursor) {
+        try {
+            ScenarioPage page = scenarioService.list(limit == null ? 0 : limit, cursor);
+            List<ScenarioResponse> items = page.items().stream()
+                    .map(s -> new ScenarioResponse(
+                            s.scenarioId(), s.tenantId(), s.name(),
+                            s.ruleSetId(), s.ruleSetVersion(), s.status(),
+                            -1L))  // NO_VERSION — avoids per-item replayVersion N+1
+                    .toList();
+            return new ScenarioListResult(items, page.nextCursor());
+        } catch (IllegalArgumentException e) {
+            // Bad cursor — safe, client-actionable message; not masked as internal error.
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("list_scenarios failed", e);
+            throw new IllegalStateException("internal error listing scenarios");
+        }
+    }
+
+    record ScenarioListResult(
+            List<ScenarioResponse> items,
+            // Spring AI schema generation: marks nextCursor as optional.
+            @Nullable
+            // Jackson serialization: omits nextCursor when null.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String nextCursor) {}
 
     /**
      * MCP-specific response DTO.
