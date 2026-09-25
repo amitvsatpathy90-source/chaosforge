@@ -42,7 +42,7 @@ public class ScenarioService {
                         .orElseThrow(() -> new ResourceNotFoundException(scenarioId)));
     }
 
-    public ScenarioPage list (int limit, String cursor) {
+    public ScenarioPage list(int limit, String cursor) {
         UUID tenantId = TenantContext.require();
         int boundedLimit = limit <= 0 ? DEFAULT_PAGE_SIZE : Math.min(limit, MAX_PAGE_SIZE);
 
@@ -66,7 +66,7 @@ public class ScenarioService {
         return new ScenarioPage(page, nextCursor);
     }
 
-    public record ScenarioPage(List<Scenario> items, String nextCursor){}
+    public record ScenarioPage(List<Scenario> items, String nextCursor) {}
 
     /** Current fencing token for the ETag — read FRESH (never cached); it changes on every replay. */
     public long replayVersion(UUID scenarioId) {
