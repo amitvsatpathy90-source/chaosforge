@@ -170,9 +170,18 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
     /** JSON-RPC tools/call POST for get_scenario. */
     private static MockHttpServletRequestBuilder mcpToolCall(UUID scenarioId, String bearerToken) {
         String jsonRpcBody = """
-                {"jsonrpc":"2.0","id":1,"method":"tools/call",\
-                "params":{"name":"get_scenario","arguments":{"scenarioId":"%s"}}}\
-                """.formatted(scenarioId);
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_scenario",
+                "arguments": {
+                    "scenarioId": "%s"
+                }
+            }
+        }
+        """.formatted(scenarioId);
 
         return post("/mcp")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
@@ -186,9 +195,16 @@ class ScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
     /** JSON-RPC tools/call POST for list_scenarios (no arguments needed for these isolation cases). */
     private static MockHttpServletRequestBuilder mcpListCall(String bearerToken) {
         String jsonRpcBody = """
-                {"jsonrpc":"2.0","id":1,"method":"tools/call",\
-                "params":{"name":"list_scenarios","arguments":{}}}\
-                """;
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "list_scenarios",
+                "arguments": {}
+            }
+        }
+        """;
 
         return post("/mcp")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)

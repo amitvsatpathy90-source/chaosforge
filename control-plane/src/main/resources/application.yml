@@ -54,6 +54,8 @@ spring:
       mode: never
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}   # same var the exec service reads
+    consumer:
+      group-id: control-plane-run-projection
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
@@ -171,6 +173,9 @@ chaosforge:
   target:
     block-private-networks: ${TARGET_BLOCK_PRIVATE:false}
     allowed-hosts: ${TARGET_ALLOWED_HOSTS:}
+
+  kafka:
+    results-topic: chaosforge.scenario.results.v1
 
 # Per-instance config only — NO configs.default. The Ollama authoring boundary (the only outbound
 # boundary in the CP) wired with CB + bulkhead. Timeout is bounded by the Ollama client, not R4j

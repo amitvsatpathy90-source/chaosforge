@@ -52,8 +52,7 @@ class RuleSetMcpToolsTest {
     void get_oversizedDefinition_isRejectedWithStaticMessage() {
         UUID id = UUID.randomUUID();
         String big = "x".repeat(RuleSetMcpTools.MAX_DEFINITION_CHARS + 1);
-        when(service.get(id, 1))
-                .thenReturn(new RuleSet(id, 1, UUID.randomUUID(), "ruleSet", big, Instant.now()));
+        when(service.get(id, 1)).thenReturn(new RuleSet(id, 1, UUID.randomUUID(), "rs", big, Instant.now()));
 
         assertThatThrownBy(() -> tools.getRuleSet(id, 1))
                 .isInstanceOf(IllegalStateException.class)

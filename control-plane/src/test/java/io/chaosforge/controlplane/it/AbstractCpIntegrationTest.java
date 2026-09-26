@@ -41,7 +41,9 @@ import org.testcontainers.utility.DockerImageName;
                 // Bound the shared Testcontainers PostgreSQL pool per cached test to avoid connection exhaustion
                 "spring.datasource.hikari.maximum-pool-size=5",
                 "spring.datasource.hikari.minimum-idle=0"})
-@EmbeddedKafka(partitions = 1, topics = "chaosforge.scenario.commands.v1")
+@EmbeddedKafka(partitions = 1, topics = {
+        "chaosforge.scenario.commands.v1",
+        "chaosforge.scenario.results.v1"})
 @Import(AbstractCpIntegrationTest.CpTestSupportConfig.class)
 abstract class AbstractCpIntegrationTest {
 

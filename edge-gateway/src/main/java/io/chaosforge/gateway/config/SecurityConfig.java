@@ -6,15 +6,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.util.matcher.PathPatternParserServerWebExchangeMatcher;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 
+import java.net.URI;
 import java.util.List;
 
 /**
@@ -33,7 +37,8 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(ex -> ex
                         .pathMatchers(
-                                "/actuator/health", "/actuator/info", "/actuator/prometheus")
+                                "/actuator/health", "/actuator/info", "/actuator/prometheus",
+                                "/.well-known/oauth-protected-resource")
                         .permitAll()
                         .anyExchange().authenticated())
                 // Bind the existing API chain explicitly as MCP has its own decoder.
@@ -85,14 +90,26 @@ public class SecurityConfig {
         ServerWebExchangeMatcher mcpMatcher =
                 new PathPatternParserServerWebExchangeMatcher("/mcp/**");
 
+        // Built from the request's own scheme/authority, not a configured public URL — this lab has no
+        // fixed one (free-tier deploy note: only the Gateway is ever public, and even then the address
+        // varies by environment), so deriving it per-request avoids a new env var that would just drift.
+        ServerAuthenticationEntryPoint mcpEntryPoint = (exchange, ex) -> {
+            URI request = exchange.getRequest().getURI();
+            String metadataUrl = request.getScheme() + "://" + request.getAuthority()
+                    + "/.well-known/oauth-protected-resource";
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            exchange.getResponse().getHeaders().add(HttpHeaders.WWW_AUTHENTICATE,
+                    "Bearer resource_metadata=\"" + metadataUrl + "\"");
+            return exchange.getResponse().setComplete();
+        };
+
         return http
                 .securityMatcher(mcpMatcher)
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                .authorizeExchange(ex -> ex
-                        .anyExchange().authenticated())
-                // MCP must authenticate against the MCP audience, not the normal API audience.
-                .oauth2ResourceServer(
-                        o -> o.jwt(jwt -> jwt.jwtDecoder(mcpJwtDecoder)))
+                .authorizeExchange(ex -> ex.anyExchange().authenticated())
+                .exceptionHandling(e -> e.authenticationEntryPoint(mcpEntryPoint))
+                .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtDecoder(mcpJwtDecoder)))
                 .build();
     }
 }
+
