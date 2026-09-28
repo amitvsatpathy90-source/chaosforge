@@ -48,6 +48,7 @@ here instead of duplicating this table.
 | ADR-0540 | Gateway rate limiting: Redis Lua sliding window, globally consistent across pods, fail-open — backfill record correcting ADR-0500's stale token-bucket wording | [`ADR-0540.md`](ADR-0540.md) |
 | ADR-0541 | Deployment security posture: startup asserts the individual controls (mTLS, peer-CN, SSRF guard), not just the profile flag; unconditional hardened/unhardened gauge | [`ADR-0541.md`](ADR-0541.md) |
 | ADR-0542 | Standing DLQ-depth signal: a per-`(topic, partition)` human-triage watermark in CP Postgres (`endOffset − reviewedOffset`) plus an OPERATOR-gated write verb kept off the read-only triage classes — closes arch-audit F5; explicitly re-scopes ADR-0518's "never writes state" invariant to the AI advisory path only | [`ADR-0542.md`](ADR-0542.md) |
+| ADR-0543 | MCP server embedded in the Control Plane behind a protocol-unaware Gateway proxy; dual-audience JWT boundary (`aud=chaosforge-mcp`) on its own `@Order(1)` chain per service; per-tool scope gating; `start_scenario` is the only state-changing tool — `prepare_scenario_run` and `mark_dlq_reviewed` excluded by design, not deferred | [`ADR-0543.md`](ADR-0543.md) |
 
 ---
 
@@ -55,5 +56,6 @@ here instead of duplicating this table.
 
 | Date | Change |
 |---|---|
+| 2026-09-27 | ADR-0543 added (MCP server); ADR-0521 amended (its "doesn't use MCP" impact cell is stale). |
 | 2026-09-03 | Updated `File` column entries across the index from static file names to explicit Markdown links (`[ADR-XXX.md](ADR-XXX.md)`) for GitHub views. |
 | 2026-08-09 | Index compiled from the full ADR corpus (ADR-0500–0542) |

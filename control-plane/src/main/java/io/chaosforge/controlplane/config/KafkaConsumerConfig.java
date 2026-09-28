@@ -3,6 +3,7 @@ package io.chaosforge.controlplane.config;
 import java.util.HashMap;
 import java.util.Map;
 
+import io.chaosforge.controlplane.pipeline.RunProjectionMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -15,10 +16,13 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.listener.ContainerProperties.AckMode;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
 
 /**
- * run_projection is a rebuildable read cache, not a correctness-critical inbox — decode failures
- * are logged and skipped inside the listener, never DLQ-routed (locked decision, Batch 4).
+ * run_projection is a rebuildable read cache, not a correctness-critical inbox — never DLQ-routed
+ * (locked decision, Batch 4). Decode failures are skipped inside the listener; transient persist
+ * failures are retried in place by the error handler below, then given up on and counted.
  */
 @Configuration
 public class KafkaConsumerConfig {
@@ -42,12 +46,19 @@ public class KafkaConsumerConfig {
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, byte[]> runProjectionListenerContainerFactory(
-            ConsumerFactory<String, byte[]> runProjectionConsumerFactory) {
+            ConsumerFactory<String, byte[]> runProjectionConsumerFactory,
+            RunProjectionMetrics metrics) {
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(runProjectionConsumerFactory);
         factory.getContainerProperties().setAckMode(AckMode.MANUAL);
         factory.getContainerProperties().setObservationEnabled(true);   // shares trace_id with the exec-side publish
-        // No error handler / DeadLetterPublishingRecoverer — the listener itself catches and skips.
+        // 1 attempt + 2 retries, 2s apart, on this same consumer — no restart or rebalance needed.
+        // On exhaustion: count, then the container skips past the record (no DLQ, no wedged partition).
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(
+                (record, exception) -> metrics.persistFailureExhausted(),
+                new FixedBackOff(2000L, 2L));
+        errorHandler.setCommitRecovered(true);   // MANUAL ack: commit the skipped record's offset
+        factory.setCommonErrorHandler(errorHandler);
         return factory;
     }
 }

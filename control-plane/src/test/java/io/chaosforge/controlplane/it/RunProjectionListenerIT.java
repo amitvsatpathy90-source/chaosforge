@@ -58,6 +58,45 @@ class RunProjectionListenerIT extends AbstractCpIntegrationTest {
         assertThat(decodeFailureCount()).isGreaterThan(before);
     }
 
+    @Test
+    void transientPersistFailure_retriesInPlace_andLandsOnceDbRecovers_withoutRepublishing() {
+        double failuresBefore = persistFailureCount();
+        double exhaustedBefore = persistFailureExhaustedCount();
+        UUID scenarioId = UUID.randomUUID();
+
+        breakRunProjection();
+        try {
+            publish(scenarioId, UUID.randomUUID(), 1L, "COMPLETED", Instant.now().truncatedTo(ChronoUnit.MILLIS));
+            awaitTrue(Duration.ofSeconds(10), () -> persistFailureCount() > failuresBefore);
+        } finally {
+            restoreRunProjection();   // inside the 1 + 2 retry budget (2s apart)
+        }
+
+        // Published exactly once: the row can only land via the container's own retry.
+        awaitTrue(Duration.ofSeconds(15), () -> rowCount(scenarioId) == 1);
+        assertThat(outcome(scenarioId)).isEqualTo("COMPLETED");
+        assertThat(persistFailureExhaustedCount()).isEqualTo(exhaustedBefore);
+    }
+
+    @Test
+    void persistFailureExhaustingRetries_isCounted_andDoesNotWedgeThePartition() {
+        double exhaustedBefore = persistFailureExhaustedCount();
+        UUID lostScenarioId = UUID.randomUUID();
+        UUID nextScenarioId = UUID.randomUUID();
+
+        breakRunProjection();
+        try {
+            publish(lostScenarioId, UUID.randomUUID(), 1L, "ABORTED", Instant.now().truncatedTo(ChronoUnit.MILLIS));
+            awaitTrue(Duration.ofSeconds(20), () -> persistFailureExhaustedCount() > exhaustedBefore);
+        } finally {
+            restoreRunProjection();
+        }
+
+        publish(nextScenarioId, UUID.randomUUID(), 1L, "COMPLETED", Instant.now().truncatedTo(ChronoUnit.MILLIS));
+        awaitTrue(Duration.ofSeconds(10), () -> rowCount(nextScenarioId) == 1);
+        assertThat(rowCount(lostScenarioId)).isZero();   // given up on, not DLQ-routed, not retried forever
+    }
+
     private void publish(UUID scenarioId, UUID tenantId, long replayVersion, String outcome, Instant finishedAt) {
         try {
             ScenarioRunResult event = ScenarioRunResult.newBuilder()
@@ -91,6 +130,24 @@ class RunProjectionListenerIT extends AbstractCpIntegrationTest {
 
     private double decodeFailureCount() {
         return meterRegistry.get("chaosforge.run_projection.decode_failures").counter().count();
+    }
+
+    private double persistFailureCount() {
+        return meterRegistry.get("chaosforge.run_projection.persist_failures").counter().count();
+    }
+
+    private double persistFailureExhaustedCount() {
+        return meterRegistry.get("chaosforge.run_projection.persist_failures_exhausted").counter().count();
+    }
+
+    // Fails the upsert instantly with a real SQL error — a paused container would hang instead
+    // (no client socketTimeout on CP's pool), which makes the retry budget untestable.
+    private void breakRunProjection() {
+        jdbc.execute("ALTER TABLE run_projection RENAME TO run_projection_offline");
+    }
+
+    private void restoreRunProjection() {
+        jdbc.execute("ALTER TABLE run_projection_offline RENAME TO run_projection");
     }
 
     private void awaitTrue(Duration timeout, java.util.function.BooleanSupplier condition) {

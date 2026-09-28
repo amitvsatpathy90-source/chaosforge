@@ -64,6 +64,28 @@ always safe regardless; the ordering guarantees the *behaviour* is too.
 
 ---
 
+## 3. The results-topic pairing (Control Plane as consumer)
+
+Control Plane also **consumes** `chaosforge.scenario.results.v1` (its `run_projection` cache, behind the
+`get_run_status` MCP tool, ADR-0543). This is a separate pairing from §2 — Control Plane does not consume
+`commands.v1`:
+
+| Service | Produces | Consumes |
+|---|---|---|
+| Control Plane | `chaosforge.scenario.commands.v1` | `chaosforge.scenario.results.v1` |
+| Execution Service | `chaosforge.scenario.results.v1` | `chaosforge.scenario.commands.v1` |
+
+**No consumer-before-producer ordering applies** — because no schema evolution occurred: `ScenarioRunResult`
+and Execution Service's producer are unchanged, and CP is a new passive consumer of an already
+`FULL_TRANSITIVE`-gated schema. The only first-boot effect is that the new group
+(`control-plane-run-projection`, `auto.offset.reset=earliest`) backfills from the earliest retained result.
+
+A *future* `ScenarioRunResult` version bump reverses §2's direction: Execution Service (producer) emitting
+vN should not roll out ahead of the Control Plane (consumer) that can project it. Failure semantics are in
+`chaosforge-mcp-design.md` §6.
+
+---
+
 ## Lab note
 
 There is no live Apicurio registry in the test path — the gate checks against the in-repo

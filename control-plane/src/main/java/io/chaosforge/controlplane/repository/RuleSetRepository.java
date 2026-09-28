@@ -44,4 +44,3 @@ public interface RuleSetRepository extends Repository<RuleSet, UUID> {
             @Param("cursorVersion") Integer cursorVersion,
             @Param("limit") int limit);
 }
-

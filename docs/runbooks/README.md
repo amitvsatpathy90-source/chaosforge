@@ -21,6 +21,7 @@ Operational response procedures for the alert rules in
 | `PartitionDefaultRowsPresent` | a row landed in an un-droppable `_default` partition (C28) | [dlq-and-outbox.md](dlq-and-outbox.md) |
 | `OutboxStragglerBacklog` | PENDING rows older than the hot-lane claim window, sustained | [dlq-and-outbox.md](dlq-and-outbox.md) |
 | `CommandAcceptLatencyP99High` | CP HTTP P99 > 300ms (command-accept SLO), excludes AI authoring | [dlq-and-outbox.md](dlq-and-outbox.md) |
+| `RunProjectionFailureRateHigh` | `run_projection` permanently dropped a results.v1 record (decode failure or retry-exhausted persist failure) | [dlq-and-outbox.md](dlq-and-outbox.md) |
 | `TenantPolicyFeedDown` | gateway tenant-policy loads mostly falling back to default | [gateway-rate-limit-and-policy.md](gateway-rate-limit-and-policy.md) |
 | `RateLimitFailingOpen` | gateway rate limiting failing open (Redis/policy error) | [gateway-rate-limit-and-policy.md](gateway-rate-limit-and-policy.md) |
 

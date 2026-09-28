@@ -1,7 +1,8 @@
 # Runbook: DLQ & outbox backstops
 
 Covers the operational (`ticket`) alerts: `HardPoisonInDLQ`, `DlqTriageBacklog`,
-`OutboxDeadLetterPresent`, `OutboxRelayLagging`, `CommandAcceptLatencyP99High`. None is yet an SLO
+`OutboxDeadLetterPresent`, `OutboxRelayLagging`, `CommandAcceptLatencyP99High`,
+`RunProjectionFailureRateHigh`. None is yet an SLO
 breach, but each becomes one if left alone.
 
 ---
@@ -142,6 +143,34 @@ publish. Lag is a throughput/availability signal, never a correctness one.
 
 Latency that is *all* contention 409s is working as designed; latency on the success path is the real
 problem — separate them with the **Replay outcomes (CP)** panel before digging.
+
+---
+
+## `RunProjectionFailureRateHigh`
+
+**Fires:** `chaosforge.run_projection.decode_failures` or `chaosforge.run_projection.persist_failures_exhausted`
+increased in the last 5m. Either one means a `chaosforge.scenario.results.v1` record is **permanently
+absent** from `run_projection`, the read cache behind the `get_run_status` MCP tool. The topic is never
+DLQ-routed (the cache is rebuildable), so this alert is the only signal.
+
+| Counter | Meaning | Self-heals? |
+|---|---|---|
+| `decode_failures` | Malformed Avro bytes; skipped and acked on first sight, never retried | **No** — wire-format drift between exec's producer and the CP decoder needs a code fix |
+| `persist_failures` | One upsert attempt failed; the container retries in place (1 attempt + 2 retries, 2s apart) | Usually — not alerted on, useful as retry-churn context |
+| `persist_failures_exhausted` | All 3 attempts failed; record given up on, offset committed past it | **No** for that record — Postgres was unreachable past the whole budget |
+
+**Check:**
+- Rising `decode_failures` — did the `ScenarioRunResult` schema or exec's result encoder change? It is
+  FULL_TRANSITIVE-gated, so a change should have failed the build first. Look at the CP log line
+  `run_projection decode skip: partition=… offset=…`.
+- Rising `persist_failures_exhausted` — check CP Postgres reachability and Hikari pool state. New results
+  resume on their own once it is back.
+
+**Impact is bounded:** `get_run_status` for an affected scenario returns `IN_PROGRESS` (or a stale earlier
+version) even though the run finished. Exec's `scenario_run` table holds the true outcome.
+
+**Do not** hand-republish to `chaosforge.scenario.results.v1` to "fix" it — exec's outbox owns that
+record's publish, and the upsert is idempotent on `(scenario_id, replay_version)` only if the cause is gone.
 
 ---
 

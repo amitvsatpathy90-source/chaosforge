@@ -48,12 +48,16 @@ public class RunProjectionListener {
                     UUID.fromString(result.getTenantId().toString()),
                     result.getOutcome().toString(),
                     result.getFinishedAt());
-            ack.acknowledge();
         } catch (RuntimeException e) {
-            // Transient (DB down, pool exhausted) — don't ack; let Kafka redeliver.
             log.warn("run_projection persist failed, will retry: partition={} offset={}",
                     record.partition(), record.offset(), e);
             metrics.persistFailure();
+            // Rethrow — the container's DefaultErrorHandler (KafkaConsumerConfig) seeks back to
+            // this record and retries with backoff. Swallowing here and just not acking would NOT
+            // give a prompt, deterministic retry under AckMode.MANUAL — only a later restart or
+            // rebalance would ever pick it back up.
+            throw e;
         }
+        ack.acknowledge();
     }
 }

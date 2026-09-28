@@ -98,8 +98,8 @@ public class SecurityConfig {
      * verified TenantContext and ROLE_* authorities as the normal API path.
      *
      * <p>Tool-level scope authorization is enforced per-tool via {@code @PreAuthorize} on the
-     + {@code @McpTool}-annotated method (see {@code ScenarioMcpTools}), not here — this chain
-     + only establishes transport-level authentication and tenant binding.
+     * {@code @McpTool}-annotated method (see {@code ScenarioMcpTools}), not here — this chain
+     * only establishes transport-level authentication and tenant binding.
      */
     @Bean
     @Order(2)

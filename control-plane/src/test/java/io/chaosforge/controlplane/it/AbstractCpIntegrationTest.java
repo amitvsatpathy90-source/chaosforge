@@ -19,7 +19,7 @@ import org.testcontainers.utility.DockerImageName;
  * real backing services so wiring, lifecycle beans, and the Flyway schema are all exercised together:
  *
  * <ul>
- *   <li><b>Postgres</b> — DataSource + JdbcTemplate + Flyway (V1–V8) + the @Scheduled outbox poller.</li>
+ *   <li><b>Postgres</b> — DataSource + JdbcTemplate + Flyway migrations + the @Scheduled outbox poller.</li>
  *   <li><b>Redis</b> — satisfies the {@code RedisMessageListenerContainer} (a {@code SmartLifecycle}
  *       that opens a subscription at context refresh) and the two-level cache.</li>
  *   <li><b>Embedded Kafka</b> — the outbox producer's broker.</li>

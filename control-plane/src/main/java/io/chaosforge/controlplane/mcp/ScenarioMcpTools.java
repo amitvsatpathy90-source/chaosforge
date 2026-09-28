@@ -31,6 +31,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class ScenarioMcpTools {
 
+    // Mirrors ScenarioController.NO_VERSION (private there): list items skip the per-item
+    // replayVersion lookup (N+1); callers use get_scenario for the real value.
+    private static final long NO_VERSION = -1L;
+
     private final ScenarioService scenarioService;
 
     private static final Logger log = LoggerFactory.getLogger(ScenarioMcpTools.class);
@@ -114,7 +118,7 @@ public class ScenarioMcpTools {
                     .map(s -> new ScenarioResponse(
                             s.scenarioId(), s.tenantId(), s.name(),
                             s.ruleSetId(), s.ruleSetVersion(), s.status(),
-                            -1L))  // NO_VERSION — avoids per-item replayVersion N+1
+                            NO_VERSION))
                     .toList();
             return new ScenarioListResult(items, page.nextCursor());
         } catch (IllegalArgumentException e) {
