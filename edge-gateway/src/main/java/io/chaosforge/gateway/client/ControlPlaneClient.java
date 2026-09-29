@@ -40,8 +40,8 @@ import java.util.UUID;
  *
  * <p>MCP pass-through path — forwardMcp:
  * raw byte pass-through, isolated gateway-mcp CB + bulkhead — MCP failures
- * never trip the /v1 breaker. Timeout bounds header receipt only, not the
- * streamed body.
+ * never trip the /v1 breaker. STATELESS mode returns one synchronous response,
+ * so the timeout bounds the whole CP-side call, not just header receipt.
  */
 @Component
 public class ControlPlaneClient {
@@ -49,7 +49,10 @@ public class ControlPlaneClient {
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
 
-    // MCP tool calls do real work — longer than a CRUD round-trip.
+    // MCP tool calls do real work — longer than a CRUD round-trip. Must exceed draft_scenario's
+    // Ollama-backed authoring latency: STATELESS mode returns one synchronous response (headers
+    // only arrive once CP has the full result), so this bounds the whole call, not just headers.
+    // Keep this conservative to fail slow upstream work rather than holding a gateway request open.
     private static final Duration MCP_TIMEOUT = Duration.ofSeconds(15);
 
     // Negotiated MCP protocol version; forward it to CP unchanged.
@@ -168,7 +171,7 @@ public class ControlPlaneClient {
                                         new UpstreamUnavailableException(
                                                 response.statusCode().value()))))
                 .toEntityFlux(DataBuffer.class)
-                .timeout(MCP_TIMEOUT)   // bounds header receipt only — streamed body not affected
+                .timeout(MCP_TIMEOUT)   // bounds the full synchronous CP call
                 .transformDeferred(CircuitBreakerOperator.of(mcpCb))
                 .transformDeferred(BulkheadOperator.of(mcpBulkhead));   // outermost: bulkhead → CB → timeout
     }

@@ -1,5 +1,9 @@
 server:
   port: 8080
+  # Gateway is the sole public ingress and may sit behind a TLS-terminating LB (ECS/ALB). Without
+  # this, PRM (RFC 9728) and the 401 WWW-Authenticate resource_metadata URL are derived from the
+  # LB-internal http:// scheme/host instead of the real public https:// URL the client used.
+  forward-headers-strategy: framework
 
 spring:
   application:

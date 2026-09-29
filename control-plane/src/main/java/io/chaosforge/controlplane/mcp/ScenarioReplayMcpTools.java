@@ -45,7 +45,10 @@ public class ScenarioReplayMcpTools {
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(
                     readOnlyHint = false,
-                    destructiveHint = false,
+                    // Initiates real fault injection against the scenario's target (why C19/C20
+                    // kill-switch + auto-abort exist) — not a benign state change.
+                    destructiveHint = true,
+                    idempotentHint = true,
                     openWorldHint = false))
     public ReplayToken startScenario(
             @McpToolParam(description = "Scenario UUID to replay.", required = true)

@@ -37,11 +37,16 @@ public class McpProxyController {
             @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept,
             @RequestHeader(value = "MCP-Protocol-Version", required = false) String protocolVersion) {
 
+        // CP's stateless MCP transport rejects a request that's missing either media type on Accept
+        // with an empty 400 (no body, no reason). Default here so an MCP client that only sends
+        // Accept: application/json doesn't hit that dead end at CP.
+        String effectiveAccept = (accept == null) ? "application/json, text/event-stream" : accept;
+
         return controlPlane.forwardMcp(
                 body,
                 authorization,
                 contentType,
-                accept,
+                effectiveAccept,
                 protocolVersion);
     }
 }
