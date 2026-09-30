@@ -1,5 +1,6 @@
 package io.chaosforge.controlplane.arch;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +14,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 /**
  * Control Plane structural invariants (control-plane-rules.md). These are bytecode/source guards that
@@ -75,6 +78,16 @@ class ControlPlaneArchTest {
         assertThat(offenders)
                 .as("no JacksonException|IOException multi-catch (Jackson 3 — ADR-0520)")
                 .isEmpty();
+    }
+
+    @Test
+    void everyMcpToolMethodIsPreAuthorized() {
+        // MCP has no framework-level authorization backstop (ADR-0543): a tool without its own
+        // @PreAuthorize is callable by any MCP-audience token.
+        methods().that().areAnnotatedWith(McpTool.class)
+                .should().beAnnotatedWith(PreAuthorize.class)
+                .because("every @McpTool must declare its own scope/role check (ADR-0543)")
+                .check(CP);
     }
 
     /** Returns the relative paths of main sources containing the given literal. */

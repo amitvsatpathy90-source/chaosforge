@@ -137,6 +137,25 @@ groups:
             reachability from the CP is the first suspect — before trusting DlqTriageBacklog.
           runbook: docs/runbooks/dlq-and-outbox.md
 
+      # run_projection (get_run_status's read cache) is never DLQ-routed by design, so a permanent loss
+      # is otherwise invisible. Zero-tolerance like OutboxDeadLetterPresent: a decode failure is never
+      # retried, and a persist failure only counts here once the container's retry budget is exhausted.
+      - alert: RunProjectionFailureRateHigh
+        expr: sum(increase(chaosforge_run_projection_decode_failures_total{job="control-plane"}[5m])
+                + increase(chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "run_projection is permanently dropping records from chaosforge.scenario.results.v1"
+          description: >-
+            A decode failure (never retried) or a persist failure that exhausted its retry budget
+            (1 attempt + 2 retries) left a record out of run_projection for good, so get_run_status
+            may report IN_PROGRESS for a scenario that finished. Decode failures mean wire-format
+            drift vs exec's producer and will not self-heal; exhaustion means Postgres was down past
+            the retry budget - new results resume once it is back, this record stays stale.
+          runbook: docs/runbooks/dlq-and-outbox.md
+
       # Publish-side terminal failure: an outbox row hit MAX_ATTEMPTS and was parked DEAD. BOTH relays —
       # the CP command outbox AND the exec result-event outbox (arch-audit H3): the `by (job)` keeps them
       # distinct so the alert names which service's relay is stuck.

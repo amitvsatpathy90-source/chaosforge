@@ -1,10 +1,13 @@
 package io.chaosforge.gateway.config;
 
-import java.util.List;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
+import org.springframework.context.annotation.Primary;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -16,27 +19,40 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.util.matcher.PathPatternParserServerWebExchangeMatcher;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
+
+import java.net.URI;
+import java.util.List;
 
 /**
- * Spring Security 7 reactive resource server. The gateway is the sole acceptor of public JWTs
- * (mtls-rules.md). Invalid JWT → 401 here, never forwarded to the Control Plane.
+ * Spring Security 7 reactive resource server. The gateway is the sole acceptor of public JWTs.
+ * Invalid JWT → 401 here, never forwarded to the Control Plane.
  */
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
     @Bean
-    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
+    public SecurityWebFilterChain springSecurityFilterChain(
+            ServerHttpSecurity http,
+            @Qualifier("jwtDecoder") ReactiveJwtDecoder jwtDecoder) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(ex -> ex
-                        .pathMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .pathMatchers(
+                                "/actuator/health", "/actuator/info", "/actuator/prometheus",
+                                "/.well-known/oauth-protected-resource")
+                        .permitAll()
                         .anyExchange().authenticated())
-                .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))
+                // Bind the existing API chain explicitly as MCP has its own decoder.
+                .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)))
                 .build();
     }
 
     @Bean
+    @Primary
     public ReactiveJwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
             @Value("${chaosforge.security.jwt.issuer}") String issuer,
@@ -55,5 +71,49 @@ public class SecurityConfig {
                 JwtValidators.createDefaultWithIssuer(issuer),   // timestamps + iss
                 new JwtClaimValidator<List<String>>(JwtClaimNames.AUD,
                         aud -> aud != null && aud.contains(audience)));
+    }
+
+    @Bean
+    ReactiveJwtDecoder mcpJwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${chaosforge.security.jwt.issuer}") String issuer,
+            @Value("${chaosforge.security.mcp.jwt.audience}") String audience) {
+
+        // MCP is a separate OAuth resource boundary. It uses the same issuer/JWKS,
+        // but requires the dedicated MCP resource audience.
+        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        decoder.setJwtValidator(jwtClaimsValidator(issuer, audience));
+        return decoder;
+    }
+
+    @Bean
+    @Order(1)
+    public SecurityWebFilterChain mcpSecurityFilterChain(
+            ServerHttpSecurity http,
+            @Qualifier("mcpJwtDecoder") ReactiveJwtDecoder mcpJwtDecoder) {
+
+        ServerWebExchangeMatcher mcpMatcher =
+                new PathPatternParserServerWebExchangeMatcher("/mcp/**");
+
+        // Built from the request's own scheme/authority, not a configured public URL — this lab has no
+        // fixed one (free-tier deploy note: only the Gateway is ever public, and even then the address
+        // varies by environment), so deriving it per-request avoids a new env var that would just drift.
+        ServerAuthenticationEntryPoint mcpEntryPoint = (exchange, ex) -> {
+            URI request = exchange.getRequest().getURI();
+            String metadataUrl = request.getScheme() + "://" + request.getAuthority()
+                    + "/.well-known/oauth-protected-resource";
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            exchange.getResponse().getHeaders().add(HttpHeaders.WWW_AUTHENTICATE,
+                    "Bearer resource_metadata=\"" + metadataUrl + "\"");
+            return exchange.getResponse().setComplete();
+        };
+
+        return http
+                .securityMatcher(mcpMatcher)
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(ex -> ex.anyExchange().authenticated())
+                .exceptionHandling(e -> e.authenticationEntryPoint(mcpEntryPoint))
+                .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtDecoder(mcpJwtDecoder)))
+                .build();
     }
 }

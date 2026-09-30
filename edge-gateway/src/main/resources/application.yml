@@ -1,5 +1,9 @@
 server:
   port: 8080
+  # Gateway is the sole public ingress and may sit behind a TLS-terminating LB (ECS/ALB). Without
+  # this, PRM (RFC 9728) and the 401 WWW-Authenticate resource_metadata URL are derived from the
+  # LB-internal http:// scheme/host instead of the real public https:// URL the client used.
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -40,6 +44,10 @@ chaosforge:
     jwt:
       issuer: ${JWT_ISSUER:http://localhost:9000}
       audience: ${JWT_AUDIENCE:chaosforge}
+    # MCP is a separate OAuth resource boundary; normal API tokens must not authenticate to /mcp.
+    mcp:
+      jwt:
+        audience: ${MCP_JWT_AUDIENCE:chaosforge-mcp}
   control-plane:
     base-url: ${CONTROL_PLANE_URL:http://localhost:8081}
 
@@ -86,8 +94,22 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
+      # MCP proxy path — isolated from gateway-cp so a CP-side MCP overload can't trip
+      # the breaker for /v1 replay/get traffic, or vice versa.
+      gateway-mcp:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+        record-exceptions:
+          - io.chaosforge.gateway.client.UpstreamUnavailableException
+          - java.util.concurrent.TimeoutException
   bulkhead:
     instances:
       gateway-cp:
         max-concurrent-calls: 64
         max-wait-duration: 0       # fail fast → BulkheadFullException → 503 (no queueing)
+      gateway-mcp:
+        max-concurrent-calls: 32   # separate concurrency budget from gateway-cp for MCP tool-call
+        max-wait-duration: 0

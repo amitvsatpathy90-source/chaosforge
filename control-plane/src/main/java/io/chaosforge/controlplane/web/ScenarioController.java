@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -54,8 +55,12 @@ public class ScenarioController {
     }
 
     @GetMapping
-    public List<ScenarioResponse> list() {
-        return scenarioService.list().stream().map(s -> toResponse(s, NO_VERSION)).toList();
+    public ScenarioPageResponse list(
+            @RequestParam(defaultValue = "0") int limit,
+            @RequestParam(required = false) String cursor) {
+        ScenarioService.ScenarioPage page = scenarioService.list(limit, cursor);
+        List<ScenarioResponse> items = page.items().stream().map(s -> toResponse(s, NO_VERSION)).toList();
+        return new ScenarioPageResponse(items, page.nextCursor());
     }
 
     /**
@@ -124,6 +129,9 @@ public class ScenarioController {
     public record ScenarioResponse(
             UUID scenarioId, UUID tenantId, String name,
             UUID ruleSetId, int ruleSetVersion, String status, long replayVersion) {}
+
+    /** Pagination envelope carrying the current items and opaque continuation cursor. */
+    public record ScenarioPageResponse(List<ScenarioResponse> items, String nextCursor){}
 
     public record ReplayResponse(
             UUID scenarioId, long replayVersion, UUID ruleSetId, int ruleSetVersion, UUID messageId) {}

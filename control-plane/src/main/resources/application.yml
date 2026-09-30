@@ -54,6 +54,8 @@ spring:
       mode: never
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}   # same var the exec service reads
+    consumer:
+      group-id: control-plane-run-projection
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
@@ -77,6 +79,30 @@ spring:
           temperature: 0.2
           format: json                  # structured-output mode for BeanOutputConverter
 
+    # MCP server config: exposes read-only ChaosForge tools (ScenarioMcpTools) to MCP clients
+    # over /mcp, reached only via the Gateway proxy — never a direct public endpoint.
+    mcp:
+      server:
+        # MCP is exposed through the existing CP MVC application at /mcp.
+        # SYNC is intentional: TenantContext is a ThreadLocal and the first
+        # MCP capability must execute on the authenticated request thread.
+        protocol: STATELESS
+        type: SYNC
+        name: chaosforge-control-plane
+        version: 1.0.0
+
+        # Keep annotation-based registration explicit even though the starter
+        # enables it by default. This makes the tool-registration contract visible.
+        annotation-scanner:
+          enabled: true
+
+        # Batch 4 exposes tools only. Resources/prompts/completions remain deferred.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
 chaosforge:
   # Deployment posture marker (arch-audit F2), asserted by DeploymentPostureGuard at startup.
   #   lab      — permissive; plain HTTP, /internal permitAll, SSRF guard inert. The DEFAULT, because no
@@ -95,12 +121,17 @@ chaosforge:
     jwt:
       issuer: ${JWT_ISSUER:http://localhost:9000}
       audience: ${JWT_AUDIENCE:chaosforge}
+    # MCP is a separate OAuth resource boundary; normal API tokens must not authenticate to /mcp.
+    mcp:
+      jwt:
+        audience: ${MCP_JWT_AUDIENCE:chaosforge-mcp}
   outbox:
     poll-interval-ms: 1000
     batch-size: 64
-    max-attempts: 8           # record-FATAL rows crossing this are quarantined as DEAD (ADR-0528; alert,
-                              # not DLQ). Broker-global failures never DEAD — they back off at the cap
-                              # under the relay-lag alerts (an outage must not force manual data repair).
+    # record-FATAL rows crossing this are quarantined as DEAD (ADR-0528; alert, not DLQ).
+    # Broker-global failures never DEAD — they back off at the cap under the relay-lag
+    # alerts (an outage must not force manual data repair).
+    max-attempts: 8
     lease-seconds: 30         # claim visibility timeout; must exceed send-timeout-ms
     send-timeout-ms: 10000    # ONE shared harvest deadline per pipelined batch (not per record)
     base-backoff-seconds: 2
@@ -142,6 +173,9 @@ chaosforge:
   target:
     block-private-networks: ${TARGET_BLOCK_PRIVATE:false}
     allowed-hosts: ${TARGET_ALLOWED_HOSTS:}
+
+  kafka:
+    results-topic: chaosforge.scenario.results.v1
 
 # Per-instance config only — NO configs.default. The Ollama authoring boundary (the only outbound
 # boundary in the CP) wired with CB + bulkhead. Timeout is bounded by the Ollama client, not R4j

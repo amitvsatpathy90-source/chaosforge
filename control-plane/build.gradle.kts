@@ -37,6 +37,10 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation(libs.resilience4j.spring.boot4)
     implementation(libs.caffeine)                          // L1 of the two-level cache
+
+    // MCP server transport + @McpTool annotation support.
+    implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
+
     implementation(libs.springAi.starter.ollama)           // authoring + DLQ triage (CP only)
     implementation(libs.uuid.creator)                      // UUIDv7 outbox message_id
     implementation(project(":chaosforge-common"))

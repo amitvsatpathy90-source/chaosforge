@@ -44,9 +44,10 @@ echo "$AI_JWT"
 3. [HTTP Surface: Public vs. Protected](#http-surface-public-vs-protected)
 4. [Bearer Token: Generation & Setup](#bearer-token-generation--setup)
 5. [Testing Endpoints](#testing-endpoints)
-6. [Token Management](#token-management)
-7. [Troubleshooting](#troubleshooting)
-8. [Notes](#notes)
+6. [MCP Testing](#mcp-testing-gateway--control-plane)
+7. [Token Management](#token-management)
+8. [Troubleshooting](#troubleshooting)
+9. [Notes](#notes)
 
 ---
 
@@ -54,7 +55,7 @@ echo "$AI_JWT"
 
 | File | Purpose |
 | --- | --- |
-| `cf-smoke-test.json` | Postman collection for import (all 6 requests, chained via test scripts) |
+| `cf-smoke-test.json` | Postman collection for import (all 9 requests, chained via test scripts) |
 
 ---
 
@@ -137,10 +138,11 @@ AI_JWT=$(docker/jwks/mint-jwt.sh --tenant <TENANT_ID> --roles OPERATOR)
    - `OPERATOR_JWT` — minted operator token
    - `TENANT_JWT` — minted tenant token
    - `AI_JWT` — minted combined tenant+operator token (**not auto-populated by any test script — paste manually**)
+   - `MCP_READ_JWT`, `MCP_OPERATE_JWT` — minted MCP-audience tokens (**paste manually**; see [MCP Testing](#mcp-testing-gateway--control-plane))
    - `CP_URL` — `http://localhost:8081`
    - `GATEWAY_URL` — `http://localhost:8080`
 3. `TENANT_ID`, `RULE_SET_ID`, `SCENARIO_ID`, `ETAG` **are** auto-captured by collection test scripts as you run requests 1–4 in order — leave blank initially.
-4. Run requests **in order (1 → 6)**. Steps 1–4 chain automatically; step 5 depends on step 4's captured `ETAG`; step 6 depends on the manually-pasted `AI_JWT`.
+4. Run requests **in order (1 → 9)**. Steps 1–4 chain automatically; step 5 depends on step 4's captured `ETAG` and refreshes it from its own response; step 6 depends on the manually-pasted `AI_JWT`; steps 7–9 are the MCP requests (see below).
 
 ### Step 4: Verify Token Claims
 
@@ -199,6 +201,34 @@ Expected payload:
 
 ---
 
+## MCP Testing (Gateway → Control Plane)
+
+Requests 7–9 reuse the tenant, rule-set and scenario created by requests 1–3 — **do not recreate them**.
+MCP has no create tool; only `/v1` creates scenarios. Three tiers, deliberately separate:
+
+| Tier | Requests | Proves |
+|---|---|---|
+| REST / application smoke test | 1–5 (6 = AI, needs Ollama) | the existing `/v1` path |
+| MCP protocol / tool test | 7 `tools/list` | `/mcp` is authenticated (`aud=chaosforge-mcp`) and the router lists the 8 tools; no side effects |
+| MCP end-to-end execution | 8 `start_scenario`, 9 `get_run_status` | Gateway → CP → orchestrator → outbox → Kafka → Exec → results topic → CP consumer → `run_projection` |
+
+**Tokens** — MCP needs its own audience and scope (a `/v1` token is rejected at `/mcp`, and vice versa):
+
+```bash
+docker/jwks/mint-jwt.sh --tenant "$TENANT_ID" --aud chaosforge-mcp --scope chaosforge.read      # → MCP_READ_JWT (7, 9)
+docker/jwks/mint-jwt.sh --tenant "$TENANT_ID" --aud chaosforge-mcp --scope chaosforge.operate   # → MCP_OPERATE_JWT (8)
+```
+
+**Request 8** sends `expectedVersion` = `{{ETAG}}` — the scenario's *current* replay version. Request 5's
+script refreshes `ETAG` from its `:run` response, so it is correct by the time request 8 runs. Do not
+hard-code `0`: that is only right for a scenario that has never been replayed, and breaks on a re-run.
+
+**Request 9** is a single point-in-time check, not a poll. `status` is `IN_PROGRESS` (no `run_projection` row
+yet — send it again) or `TERMINAL` with an `outcome` (`COMPLETED`, `ABORTED`, `FAILED` or `INCOMPLETE`).
+Do not assert a specific outcome; it depends on the rule-set and target.
+
+---
+
 ## Token Management
 
 ### Token Claims Reference
@@ -225,6 +255,10 @@ docker/jwks/mint-jwt.sh --roles OPERATOR
 
 # Combined tenant + operator token
 docker/jwks/mint-jwt.sh --tenant <TENANT_ID> --roles OPERATOR
+
+# MCP tokens (own audience + scope)
+docker/jwks/mint-jwt.sh --tenant <TENANT_ID> --aud chaosforge-mcp --scope chaosforge.read
+docker/jwks/mint-jwt.sh --tenant <TENANT_ID> --aud chaosforge-mcp --scope chaosforge.operate
 ```
 
 ---
@@ -234,10 +268,11 @@ docker/jwks/mint-jwt.sh --tenant <TENANT_ID> --roles OPERATOR
 | Issue / Error | Root Cause | Solution |
 | --- | --- | --- |
 | `keys/private.pem missing` | JWKS key pair not created | Run `docker/jwks/generate-jwks.sh` |
-| `401 Unauthorized` | Missing/invalid Bearer token, or `AI_JWT` left blank (not auto-populated by collection scripts) | Ensure `Authorization: Bearer <TOKEN>` is attached; confirm `AI_JWT` was pasted manually before running request 6 |
+| `401 Unauthorized` | Missing/invalid Bearer token, or `AI_JWT` / `MCP_READ_JWT` / `MCP_OPERATE_JWT` left blank (none are auto-populated by collection scripts), or a token with the wrong `aud` (`/v1` needs `chaosforge`, `/mcp` needs `chaosforge-mcp`) | Ensure `Authorization: Bearer <TOKEN>` is attached; confirm the right token was pasted manually before request 6 (`AI_JWT`) or requests 7–9 (MCP tokens) |
 | `403 Forbidden` | Missing required role | Mint token with `--roles OPERATOR` |
 | `404 Not Found` on Scenario Run | Cross-tenant token or invalid ID | Ensure `TENANT_JWT` matches the tenant who created the scenario |
 | `409 Conflict` on Scenario Run | Stale `If-Match` / ETag | Re-fetch scenario via Gateway to capture the latest `ETag` |
+| `isError:true` on request 8 (`start_scenario`) | Stale `expectedVersion` — `ETAG` was not refreshed after the last replay (MCP reports it in-band, not as HTTP 409) | Run request 4 (or 5) to refresh `ETAG`, then resend |
 | `Connection Refused` | Target service not booted | Start `ControlPlaneApplication`, `EdgeGatewayApplication`, or `ExecutionServiceApplication` |
 
 ---

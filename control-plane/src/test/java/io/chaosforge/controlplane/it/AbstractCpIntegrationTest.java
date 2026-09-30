@@ -19,7 +19,7 @@ import org.testcontainers.utility.DockerImageName;
  * real backing services so wiring, lifecycle beans, and the Flyway schema are all exercised together:
  *
  * <ul>
- *   <li><b>Postgres</b> — DataSource + JdbcTemplate + Flyway (V1–V8) + the @Scheduled outbox poller.</li>
+ *   <li><b>Postgres</b> — DataSource + JdbcTemplate + Flyway migrations + the @Scheduled outbox poller.</li>
  *   <li><b>Redis</b> — satisfies the {@code RedisMessageListenerContainer} (a {@code SmartLifecycle}
  *       that opens a subscription at context refresh) and the two-level cache.</li>
  *   <li><b>Embedded Kafka</b> — the outbox producer's broker.</li>
@@ -36,8 +36,14 @@ import org.testcontainers.utility.DockerImageName;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-        properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
-@EmbeddedKafka(partitions = 1, topics = "chaosforge.scenario.commands.v1")
+        properties = {
+                "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",
+                // Bound the shared Testcontainers PostgreSQL pool per cached test to avoid connection exhaustion
+                "spring.datasource.hikari.maximum-pool-size=5",
+                "spring.datasource.hikari.minimum-idle=0"})
+@EmbeddedKafka(partitions = 1, topics = {
+        "chaosforge.scenario.commands.v1",
+        "chaosforge.scenario.results.v1"})
 @Import(AbstractCpIntegrationTest.CpTestSupportConfig.class)
 abstract class AbstractCpIntegrationTest {
 

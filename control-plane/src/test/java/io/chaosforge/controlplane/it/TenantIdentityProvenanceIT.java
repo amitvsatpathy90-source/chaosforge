@@ -1,8 +1,11 @@
 package io.chaosforge.controlplane.it;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -47,8 +51,15 @@ class TenantIdentityProvenanceIT extends AbstractCpIntegrationTest {
     private static final String GARBAGE_TOKEN = "not.a.valid.token";
     private static final String NO_TENANT_TOKEN = "no.tenant.token";
 
+    private static final String MCP_TOKEN = "mcp.jwt.token";
+    private static final String NORMAL_TOKEN = "normal.jwt.token";
+    private static final String MCP_NO_TENANT_TOKEN = "mcp.no.tenant.token";
+
     @MockitoBean
     private JwtDecoder jwtDecoder;
+
+    @MockitoBean(name = "mcpJwtDecoder")
+    private JwtDecoder mcpJwtDecoder;
 
     @Autowired
     private WebApplicationContext wac;
@@ -148,6 +159,69 @@ class TenantIdentityProvenanceIT extends AbstractCpIntegrationTest {
         mvc.perform(get("/v1/scenarios/{id}", scenarioId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(NO_TENANT_TOKEN))
                         .header("X-Tenant-Id", owner.toString()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The MCP resource accepts only a token validated by the dedicated MCP decoder.
+     *
+     * <p>A real {@code tools/list} call proves the router is actually registered at {@code /mcp} —
+     * a fake path would 404 regardless of whether MCP was wired at all.
+     */
+    @Test
+    void mcpAudienceToken_reachesMcpChain() throws Exception {
+        when(mcpJwtDecoder.decode(MCP_TOKEN)).thenReturn(jwtFor(other));
+
+        mvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("get_scenario")))
+                .andExpect(content().string(containsString("list_scenarios")))
+                .andExpect(content().string(containsString("get_rule_set")))
+                .andExpect(content().string(containsString("list_rule_sets")));
+    }
+
+    /**
+     * A normal API token must be rejected by the MCP decoder before the request reaches the MCP resource.
+     */
+    @Test
+    void normalAudienceToken_isRejectedByMcpChain() throws Exception {
+        when(mcpJwtDecoder.decode(NORMAL_TOKEN))
+                .thenThrow(new BadJwtException("wrong audience"));
+
+        mvc.perform(get("/mcp/probe")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(NORMAL_TOKEN)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The MCP audience must not authenticate the normal API resource.
+     *
+     * <p>This proves the two audience boundaries are directional rather than merely additive.
+     */
+    @Test
+    void mcpAudienceToken_isRejectedByNormalChain() throws Exception {
+        when(jwtDecoder.decode(MCP_TOKEN))
+                .thenThrow(new BadJwtException("wrong audience"));
+
+        mvc.perform(get("/v1/scenarios/{id}", scenarioId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_TOKEN)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * A token that authenticates the MCP resource but carries no tenant identity must never reach MCP.
+     */
+    @Test
+    void mcpTokenWithoutTenant_isUnauthorized() throws Exception {
+        when(mcpJwtDecoder.decode(MCP_NO_TENANT_TOKEN))
+                .thenReturn(jwtWithoutTenant());
+
+        mvc.perform(get("/mcp/probe")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MCP_NO_TENANT_TOKEN)))
                 .andExpect(status().isUnauthorized());
     }
 

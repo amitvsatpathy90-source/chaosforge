@@ -14,7 +14,9 @@
 		{ "key": "RULE_SET_VERSION", "value": "1" },
 		{ "key": "SCENARIO_ID", "value": "" },
 		{ "key": "ETAG", "value": "" },
-		{ "key": "AI_JWT", "value": "" }
+		{ "key": "AI_JWT", "value": "" },
+		{ "key": "MCP_READ_JWT", "value": "" },
+		{ "key": "MCP_OPERATE_JWT", "value": "" }
 	],
 	"item": [
 		{
@@ -148,6 +150,21 @@
 		},
 		{
 			"name": "5. Trigger Scenario Replay",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var etagHeader = pm.response.headers.get('ETag');",
+							"if (etagHeader) {",
+							"    var cleanEtag = etagHeader.replace(/\"/g, '');",
+							"    pm.collectionVariables.set('ETAG', cleanEtag);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
 			"request": {
 				"method": "POST",
 				"header": [
@@ -178,6 +195,66 @@
 					"raw": "{{CP_URL}}/v1/ai/scenario-drafts",
 					"host": ["{{CP_URL}}"],
 					"path": ["v1", "ai", "scenario-drafts"]
+				}
+			}
+		},
+		{
+			"name": "7. MCP: List Tools",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{MCP_READ_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Accept", "value": "application/json, text/event-stream" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"
+				},
+				"url": {
+					"raw": "{{GATEWAY_URL}}/mcp",
+					"host": ["{{GATEWAY_URL}}"],
+					"path": ["mcp"]
+				}
+			}
+		},
+		{
+			"name": "8. MCP: Start Scenario Replay",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{MCP_OPERATE_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Accept", "value": "application/json, text/event-stream" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"start_scenario\",\"arguments\":{\"scenarioId\":\"{{SCENARIO_ID}}\",\"expectedVersion\":{{ETAG}},\"idempotencyKey\":\"{{$guid}}\"}}}"
+				},
+				"url": {
+					"raw": "{{GATEWAY_URL}}/mcp",
+					"host": ["{{GATEWAY_URL}}"],
+					"path": ["mcp"]
+				}
+			}
+		},
+		{
+			"name": "9. MCP: Get Run Status",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{MCP_READ_JWT}}" },
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Accept", "value": "application/json, text/event-stream" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"get_run_status\",\"arguments\":{\"scenarioId\":\"{{SCENARIO_ID}}\"}}}"
+				},
+				"url": {
+					"raw": "{{GATEWAY_URL}}/mcp",
+					"host": ["{{GATEWAY_URL}}"],
+					"path": ["mcp"]
 				}
 			}
 		}

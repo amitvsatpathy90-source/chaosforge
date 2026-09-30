@@ -1,5 +1,6 @@
 # promtool unit tests for SecurityPostureNotHardened (arch-audit F2), DlqTriageBacklog (ADR-0542)
-# and DlqDepthPollFailing (the frozen-gauge meta-alert mirrored from RPE's Bundle-1 fix).
+# DlqDepthPollFailing (the frozen-gauge meta-alert mirrored from RPE's Bundle-1 fix) and
+# RunProjectionFailureRateHigh (the run_projection permanent-loss signal, ADR-0543).
 #
 # Why this file exists: the rule is INERT in the lab by construction (the lab stamps env=lab and is
 # unhardened by design), so a running lab Prometheus can never demonstrate that it fires. Without these
@@ -203,4 +204,64 @@ tests:
     alert_rule_test:
       - eval_time: 15m
         alertname: DlqDepthPollFailing
+        exp_alerts: []
+
+  # 13. RunProjectionFailureRateHigh: sustained decode failures (zero-tolerance >0, for: 1m) — fires.
+  #     persist_failures_exhausted is pre-registered at boot and flat, so both series exist.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_run_projection_decode_failures_total{job="control-plane"}'
+        values: "0+1x30"
+      - series: 'chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RunProjectionFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "run_projection is permanently dropping records from chaosforge.scenario.results.v1"
+              description: >-
+                A decode failure (never retried) or a persist failure that exhausted its retry budget
+                (1 attempt + 2 retries) left a record out of run_projection for good, so get_run_status
+                may report IN_PROGRESS for a scenario that finished. Decode failures mean wire-format
+                drift vs exec's producer and will not self-heal; exhaustion means Postgres was down past
+                the retry budget - new results resume once it is back, this record stays stale.
+              runbook: docs/runbooks/dlq-and-outbox.md
+
+  # 14. Persist-failure exhaustion alone also fires (a DB outage longer than the retry budget).
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_run_projection_decode_failures_total{job="control-plane"}'
+        values: "0+0x30"
+      - series: 'chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RunProjectionFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "run_projection is permanently dropping records from chaosforge.scenario.results.v1"
+              description: >-
+                A decode failure (never retried) or a persist failure that exhausted its retry budget
+                (1 attempt + 2 retries) left a record out of run_projection for good, so get_run_status
+                may report IN_PROGRESS for a scenario that finished. Decode failures mean wire-format
+                drift vs exec's producer and will not self-heal; exhaustion means Postgres was down past
+                the retry budget - new results resume once it is back, this record stays stale.
+              runbook: docs/runbooks/dlq-and-outbox.md
+
+  # 15. Healthy consumer — both counters registered at boot and flat at 0. Never fires. (Per-attempt
+  #     persist_failures is deliberately not in the expression: a retried-then-recovered blip is silent.)
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_run_projection_decode_failures_total{job="control-plane"}'
+        values: "0+0x30"
+      - series: 'chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: RunProjectionFailureRateHigh
         exp_alerts: []

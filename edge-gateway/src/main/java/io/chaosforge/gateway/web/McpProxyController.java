@@ -1,0 +1,52 @@
+package io.chaosforge.gateway.web;
+
+import io.chaosforge.gateway.client.ControlPlaneClient;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+/**
+ * Thin MCP transport proxy. Gateway handles ingress security and rate limiting; Control Plane owns MCP
+ * authentication, authorization, and protocol semantics.
+ */
+@RestController
+@RequestMapping("/mcp")
+public class McpProxyController {
+
+    private final ControlPlaneClient controlPlane;
+
+    public McpProxyController(ControlPlaneClient controlPlane) {
+        this.controlPlane = controlPlane;
+    }
+
+    /**
+     * Forwards the opaque MCP stream and required transport headers unchanged.
+     */
+    @PostMapping
+    public Mono<ResponseEntity<Flux<DataBuffer>>> forward(
+            @RequestBody Flux<DataBuffer> body,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+            @RequestHeader(HttpHeaders.CONTENT_TYPE) String contentType,
+            @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept,
+            @RequestHeader(value = "MCP-Protocol-Version", required = false) String protocolVersion) {
+
+        // CP's stateless MCP transport rejects a request that's missing either media type on Accept
+        // with an empty 400 (no body, no reason). Default here so an MCP client that only sends
+        // Accept: application/json doesn't hit that dead end at CP.
+        String effectiveAccept = (accept == null) ? "application/json, text/event-stream" : accept;
+
+        return controlPlane.forwardMcp(
+                body,
+                authorization,
+                contentType,
+                effectiveAccept,
+                protocolVersion);
+    }
+}

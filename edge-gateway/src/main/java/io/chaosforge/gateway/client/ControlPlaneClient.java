@@ -9,24 +9,39 @@ import io.github.resilience4j.reactor.bulkhead.operator.BulkheadOperator;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Duration;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.Duration;
+import java.util.UUID;
 
 /**
  * All outbound calls to the Control Plane. No blocking calls.
- * Proxy path (initiateReplay/getScenario): bulkhead → CB → timeout order (gateway-rules.md);
- * forwards Authorization/Idempotency-Key intact for CP's JWT re-verify + idempotency.
- * Cache-load path (fetchTenantPolicy): hits CP's /internal policy endpoint outside any request
- * context (mTLS-authenticated as the gateway process, ADR-0532); separate CB, fail-open to the
- * default policy on CP failure — never silent, WARNs + increments a fallback counter.
+ *
+ * <p>Proxy path — initiateReplay / getScenario:
+ * bulkhead → CB → timeout order; forwards Authorization/Idempotency-Key intact
+ * for CP's JWT re-verify + idempotency.
+ *
+ * <p>Cache-load path — fetchTenantPolicy:
+ * hits CP's /internal policy endpoint outside any request context
+ * (mTLS-authenticated as the gateway process, ADR-0532); separate CB,
+ * fail-open to the default policy on CP failure — never silent,
+ * WARNs + increments a fallback counter.
+ *
+ * <p>MCP pass-through path — forwardMcp:
+ * raw byte pass-through, isolated gateway-mcp CB + bulkhead — MCP failures
+ * never trip the /v1 breaker. The timeout bounds waiting for the CP response
+ * entity; response-body streaming afterwards is not covered by it.
  */
 @Component
 public class ControlPlaneClient {
@@ -34,21 +49,40 @@ public class ControlPlaneClient {
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
 
+    // MCP tool calls do real work — longer than a CRUD round-trip. Bounds ordinary tool calls only:
+    // draft_scenario on CPU Ollama exceeds it in the lab (known limitation, not a bug).
+    // Kept conservative to fail slow upstream work rather than hold a gateway request open.
+    private static final Duration MCP_TIMEOUT = Duration.ofSeconds(15);
+
+    // Negotiated MCP protocol version; forward it to CP unchanged.
+    private static final String MCP_PROTOCOL_VERSION = "MCP-Protocol-Version";
+
     private final WebClient webClient;
     private final CircuitBreaker proxyCb;
     private final Bulkhead proxyBulkhead;
     private final CircuitBreaker cacheLoadCb;
+
+    // Separate failure budget — MCP failures never trip gateway-cp's breaker.
+    private final CircuitBreaker mcpCb;
+    private final Bulkhead mcpBulkhead;
+
     private final Counter policyLoadSuccess;
     private final Counter policyLoadFallback;
 
     public ControlPlaneClient(WebClient controlPlaneWebClient, CircuitBreakerRegistry cbRegistry,
                               BulkheadRegistry bulkheadRegistry, MeterRegistry meterRegistry) {
         this.webClient = controlPlaneWebClient;
+
         this.proxyCb = cbRegistry.circuitBreaker("gateway-cp");
         this.proxyBulkhead = bulkheadRegistry.bulkhead("gateway-cp");
+
         this.cacheLoadCb = cbRegistry.circuitBreaker("cache-load");
+
         this.policyLoadSuccess = meterRegistry.counter("chaosforge.gateway.policy_load", "outcome", "success");
         this.policyLoadFallback = meterRegistry.counter("chaosforge.gateway.policy_load", "outcome", "fallback");
+
+        this.mcpCb = cbRegistry.circuitBreaker("gateway-mcp");
+        this.mcpBulkhead = bulkheadRegistry.bulkhead("gateway-mcp");
     }
 
     public Mono<ResponseEntity<String>> initiateReplay(UUID scenarioId, String authorization,
@@ -98,8 +132,46 @@ public class ControlPlaneClient {
         return response.toEntity(String.class);
     }
 
+    /** Extracts last 4 characters of a UUID string to avoid leaking full identifiers in logs. */
     private static String last4(UUID id) {
         String s = id.toString();
         return s.substring(s.length() - 4);
+    }
+
+    /** Forwards MCP request/response streams without buffering or inspecting JSON-RPC. */
+    public Mono<ResponseEntity<Flux<DataBuffer>>> forwardMcp(
+            Flux<DataBuffer> body,
+            String authorization,
+            String contentType,
+            String accept,
+            String protocolVersion) {
+
+        return webClient.post()
+                .uri("/mcp")
+                .headers(headers -> {
+                    headers.set(HttpHeaders.AUTHORIZATION, authorization);
+                    headers.set(HttpHeaders.CONTENT_TYPE, contentType);
+
+                    if (accept != null) {
+                        headers.set(HttpHeaders.ACCEPT, accept);
+                    }
+                    if (protocolVersion != null) {
+                        headers.set(MCP_PROTOCOL_VERSION, protocolVersion);
+                    }
+                })
+                .body(BodyInserters.fromDataBuffers(body))
+                .retrieve()
+                // 4xx is a CP response and must remain visible to the MCP client.
+                .onStatus(HttpStatusCode::is4xxClientError, response -> Mono.empty())
+                // 5xx is treated like the existing scenario proxy's upstream-failure path.
+                .onStatus(HttpStatusCode::is5xxServerError,
+                        response -> response.releaseBody()
+                                .then(Mono.error(
+                                        new UpstreamUnavailableException(
+                                                response.statusCode().value()))))
+                .toEntityFlux(DataBuffer.class)
+                .timeout(MCP_TIMEOUT)   // bounds the wait for the CP response entity; body streaming is separate
+                .transformDeferred(CircuitBreakerOperator.of(mcpCb))
+                .transformDeferred(BulkheadOperator.of(mcpBulkhead));   // outermost: bulkhead → CB → timeout
     }
 }

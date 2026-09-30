@@ -8,7 +8,7 @@ real infrastructure).
 > **Lab benchmarks only — never production claims.** See [Lab Benchmark Disclosure](#lab-benchmark-disclosure).
 
 Java 21 · Spring Boot 4.1.x · Gradle (Kotlin DSL) · Postgres · Redis · Kafka (Redpanda) · Apicurio ·
-Resilience4j · Micrometer/Prometheus/Grafana · Spring AI (Ollama).
+Resilience4j · Micrometer/Prometheus/Grafana · Spring AI (Ollama) · MCP.
 
 ---
 
@@ -35,6 +35,7 @@ Client ──JWT──▶ Edge Gateway  (WebFlux, :8080)
                   · L1 tenant-policy cache (Caffeine)
                   · WebClient → CP, wrapped: bulkhead → CB → timeout(3s)
                   · forwards Authorization + If-Match + Idempotency-Key intact
+                  · POST /mcp → CP as raw bytes: own CB/bulkhead (gateway-mcp), aud=chaosforge-mcp
                         │
                         ▼
             Control Plane  (MVC + virtual threads, :8081)
@@ -42,6 +43,8 @@ Client ──JWT──▶ Edge Gateway  (WebFlux, :8080)
                   · Replay critical section — ownership-first CAS (ADR-0528) ⬇
                   · Transactional outbox → Kafka (SKIP LOCKED, lease-on-claim, UUIDv7)
                   · AI authoring → Ollama (BeanOutputConverter + @Valid gate)
+                  · MCP server (embedded, STATELESS): 8 scope-gated tools; start_scenario is the only writer
+                  · consumes chaosforge.scenario.results.v1 → run_projection (read cache for get_run_status)
                         │ Avro binary on chaosforge.scenario.commands.v1
                         ▼
             Execution Service  (MVC + VT + @KafkaListener, :8082)
@@ -59,7 +62,7 @@ Client ──JWT──▶ Edge Gateway  (WebFlux, :8080)
 | Service | Runtime | Hard constraint |
 |---|---|---|
 | Edge Gateway | WebFlux (Netty) | No `.block()`. Reactor Context for `tenant_id`. ReactiveResilience4j CB on every upstream call. |
-| Control Plane | MVC + virtual threads | No `Mono`/`Flux`. CAS replay (no advisory lock). JDBC on the request VT (no `jdbcExecutor`), bounded by the Hikari connection pool; measured pinning == 0. |
+| Control Plane | MVC + virtual threads | No `Mono`/`Flux`. CAS replay (no advisory lock). JDBC on the request VT (no `jdbcExecutor`), bounded by the Hikari connection pool; measured pinning == 0. Also one `@KafkaListener` (`results.v1` → `run_projection` cache): manual ack, in-place retry, no DLQ. |
 | Execution Service | MVC + VT + Kafka | `@KafkaListener` returns `void`. Manual ack post-commit. Fencing-before-inbox ordering. |
 
 ---
@@ -108,10 +111,10 @@ docker/jwks/generate-jwks.sh
 EDGE_GATEWAY_URL="http://localhost:8080"
 EXEC_DB_NAME=$(echo "$EXEC_DB_URL" | sed 's/.*\///')
 
-# Start Services in separate terminals (Source .env in each tab before bootRun):
-# Tab 1: set -a; source .env; set +a && ./gradlew :edge-gateway:bootRun
-# Tab 2: set -a; source .env; set +a && ./gradlew :control-plane:bootRun
-# Tab 3: set -a; source .env; set +a && ./gradlew :execution-service:bootRun
+# Start Services in separate terminals (Source .env in each tab before bootRun): 
+set -a; source .env; set +a && ./gradlew :edge-gateway:bootRun           # Tab 1
+set -a; source .env; set +a && ./gradlew :control-plane:bootRun          # Tab 2
+set -a; source .env; set +a && ./gradlew :execution-service:bootRun      # Tab 3
 
 # Full check (compiles + runs the test suite; CP/Exec ITs spin their own containers)
 ./gradlew check
@@ -161,11 +164,14 @@ GET_HEADERS=$(curl -si -X GET "${EDGE_GATEWAY_URL}/v1/scenarios/$SCENARIO_ID" \
 ETAG=$(echo "$GET_HEADERS" | grep -i '^etag:' | tr -d '\r' | sed 's/.*"\(.*\)".*/\1/')
 echo "ETAG=$ETAG"
 
-# 7. Trigger replay
-curl -i -X POST "${EDGE_GATEWAY_URL}/v1/scenarios/${SCENARIO_ID}:run" \
+# 7. Trigger replay (the response ETag is the new replay version — keep it for the MCP steps)
+RUN_HEADERS=$(curl -si -X POST "${EDGE_GATEWAY_URL}/v1/scenarios/${SCENARIO_ID}:run" \
   -H "Authorization: Bearer $TENANT_JWT" \
   -H "If-Match: \"$ETAG\"" \
-  -H "Idempotency-Key: $(uuidgen)"
+  -H "Idempotency-Key: $(uuidgen)")
+echo "$RUN_HEADERS"
+ETAG=$(echo "$RUN_HEADERS" | grep -i '^etag:' | tr -d '\r' | sed 's/.*"\(.*\)".*/\1/')
+echo "ETAG=$ETAG"
 
 # 8. Confirm terminal state
 docker exec chaosforge-postgres psql -U "${DB_USERNAME}" -d "${EXEC_DB_NAME}" -c \
@@ -183,22 +189,62 @@ curl -i -X GET "${EDGE_GATEWAY_URL}/v1/scenarios/$SCENARIO_ID" \
   -H "Authorization: Bearer $TENANT2_JWT"    # expect 404
 ```
 
+### MCP smoke test (Gateway → Control Plane)
+
+Continues the script above — reuses `TENANT_ID`, `SCENARIO_ID` and the refreshed `ETAG`. MCP has no
+create tool, so the scenario comes from `/v1`. MCP tokens need their own audience and scope, and every
+request needs both `Accept` types even in stateless mode.
+
+```bash
+# 1. Mint MCP read token
+MCP_READ_JWT=$(docker/jwks/mint-jwt.sh --tenant "$TENANT_ID" --aud chaosforge-mcp --scope chaosforge.read)
+
+# 2. Mint MCP operate token
+MCP_OPERATE_JWT=$(docker/jwks/mint-jwt.sh --tenant "$TENANT_ID" --aud chaosforge-mcp --scope chaosforge.operate)
+
+# 3. Set MCP headers
+MCP_HDRS=(-H "Content-Type: application/json" -H "Accept: application/json, text/event-stream")
+
+# 4. Audience isolation, both directions — expect 401 "aud claim is not valid" each time
+curl -si -X POST "${EDGE_GATEWAY_URL}/mcp" -H "Authorization: Bearer $TENANT_JWT" "${MCP_HDRS[@]}" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -1
+curl -si -X GET "${EDGE_GATEWAY_URL}/v1/scenarios/$SCENARIO_ID" -H "Authorization: Bearer $MCP_READ_JWT" | head -1
+
+# 5. Protocol test: the router is live and lists the 8 tools
+curl -s -X POST "${EDGE_GATEWAY_URL}/mcp" -H "Authorization: Bearer $MCP_READ_JWT" "${MCP_HDRS[@]}" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+# 6. Execution test: expectedVersion is the scenario's CURRENT replay version (the refreshed ETAG)
+curl -s -X POST "${EDGE_GATEWAY_URL}/mcp" -H "Authorization: Bearer $MCP_OPERATE_JWT" "${MCP_HDRS[@]}" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"start_scenario\",\"arguments\":{\"scenarioId\":\"$SCENARIO_ID\",\"expectedVersion\":$ETAG,\"idempotencyKey\":\"$(uuidgen)\"}}}"
+
+# 7. A single point-in-time check, not a poll: status is IN_PROGRESS (no run_projection row yet — re-run it)
+# or TERMINAL with an outcome (COMPLETED/ABORTED/FAILED/INCOMPLETE — not asserted here)
+curl -s -X POST "${EDGE_GATEWAY_URL}/mcp" -H "Authorization: Bearer $MCP_READ_JWT" "${MCP_HDRS[@]}" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"get_run_status\",\"arguments\":{\"scenarioId\":\"$SCENARIO_ID\"}}}"
+
+# 8. Discovery (RFC 9728)
+curl -s "${EDGE_GATEWAY_URL}/.well-known/oauth-protected-resource"
+```
+
+A stale `expectedVersion` returns `isError:true` (concurrent-replay conflict), not an HTTP 409.
+
 ### AI authoring (Control Plane only)
 
 On memory-constrained hosts (≤8GB), override before pulling:
 
 ```bash
-# Override the model (Compose and Spring Boot both need to see it)
+# 1. Override the model (Compose and Spring Boot both need to see it)
 sed -i '' 's/OLLAMA_MODEL=.*/OLLAMA_MODEL=qwen2.5-coder:1.5b/' .env 2>/dev/null \
   || sed -i 's/OLLAMA_MODEL=.*/OLLAMA_MODEL=qwen2.5-coder:1.5b/' .env
 
 docker compose -f docker-compose_chaosforge.yml --profile ai up -d
 docker exec chaosforge-ollama ollama pull qwen2.5-coder:1.5b
 
-# Control Plane reads OLLAMA_MODEL once at boot — restart it to pick up the new value:
-# Tab 2: set -a; source .env; set +a && ./gradlew :control-plane:bootRun
+# 2. Control Plane reads OLLAMA_MODEL once at boot — restart it in a tab to pick up the new value:
+set -a; source .env; set +a && ./gradlew :control-plane:bootRun
 
-# AI authoring — OPERATOR role required
+# 3. AI authoring — OPERATOR role required
 export AI_DRAFT_JWT=$(docker/jwks/mint-jwt.sh --tenant "$TENANT_ID" --roles OPERATOR)
 curl -s -X POST "${CONTROL_PLANE_URL}/v1/ai/scenario-drafts" \
   -H "Authorization: Bearer $AI_DRAFT_JWT" -H "Content-Type: application/json" \
@@ -249,6 +295,7 @@ tests; a real local HTTP server for the steady-state probe).
 | Stale `x-replay-version` → FENCING_VIOLATION | `ClaimPhaseIT` |
 | Cross-tenant → 404, no version disclosed | `TenantIdentityProvenanceIT` (full Security filter chain) |
 | Tenant identity from verified JWT, not `X-Tenant-Id` (C10) | `TenantIdentityProvenanceIT` |
+| MCP requires `aud=chaosforge-mcp`; a `/v1` token is rejected at `/mcp` and vice versa | `TenantIdentityProvenanceIT`, `McpUnauthorizedResponseIT` |
 | OutboxPoller crash → PENDING survives → retried → SENT | `OutboxPollerCrashIT` |
 | Duplicate `message_id` → exactly one effect | `ClaimPhaseIT` |
 | 100 cold-cache reads → one source load | `TwoLevelCacheIT` |
@@ -285,6 +332,8 @@ into it.** Specifically:
   `mtls` profile turns on mutual TLS (`server.ssl.client-auth: need`) with a self-signed internal CA and
   **manual** cert rotation (no CRL/OCSP). The Gateway public listener stays HTTP. Automate rotation and
   add a public CA cert before any real deployment.
+- **MCP tokens are minted directly by `docker/jwks/mint-jwt.sh`.** The lab has no authorization server
+  (the JWKS stub is static), so RFC 8707 resource-indicator-at-issuance does not apply here.
 - **Free-tier footprint:** only the Edge Gateway is deployable free; CP + Execution are Compose-local.
 - **Cache staleness** is bounded by the affected L2 TTL when the invalidation bus is down (≤ 1 h
   tenants, ≤ 5 m scenarios); `rule_sets` are exempt by construction (append-only).
@@ -298,6 +347,8 @@ The value here is the *argument and the proof*, not a throughput figure.
 - **Architecture-decision records:** For the complete, single-source-of-truth list, see the [ADR Index](docs/adrs/README.md). The replay engine is ADR-0522 (CAS)
   narrowed by **ADR-0528** (ownership-first, idempotency, outbox hardening); Avro binary is ADR-0525;
   `FULL_TRANSITIVE` compatibility is ADR-0527; tenant-identity provenance is ADR-0524.
+- **MCP:** the placement and dual-audience auth boundary are ADR-0543; topology, tool inventory and
+  failure semantics are in [`docs/chaosforge-mcp-design.md`](docs/chaosforge-mcp-design.md).
 - **Enforced constraints:** the per-service rules (no `.block()`, no `Mono`/`Flux` in CP/Exec, no
   advisory lock, no Spring AI in Exec, no `findById`) are not documentation — they're ArchUnit tests
   that fail the build. See the `*ArchTest` classes and the CI `.block()` grep.

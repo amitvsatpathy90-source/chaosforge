@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Regression guard: the Control Plane must migrate its own schema (V1–V8) at startup via Boot's Flyway
+ * Regression guard: the Control Plane must migrate its own schema at startup via Boot's Flyway
  * autoconfiguration — not via a test that runs Flyway by hand. {@link ControlPlaneContextIT} only checks
  * bean wiring, so it stayed green even when Flyway silently never ran (Boot 4 moved the Flyway autoconfig
  * to the {@code spring-boot-flyway} module; the build now pulls it via {@code spring-boot-starter-flyway}).
@@ -32,7 +32,7 @@ class CpFlywaySchemaMigrationIT extends AbstractCpIntegrationTest {
         }
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(applied).as("Flyway must have applied the CP migrations (V1–V8)").isGreaterThanOrEqualTo(5);
+        assertThat(applied).as("Flyway must have applied the CP migrations").isGreaterThanOrEqualTo(5);
     }
 
     @Test

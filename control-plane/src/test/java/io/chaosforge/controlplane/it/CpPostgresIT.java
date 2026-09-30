@@ -15,7 +15,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * Base for Control Plane integration tests: one shared Postgres container (singleton pattern — started
- * once, reaped at JVM exit), the real Flyway migrations (V1–V11) applied, and the <b>real</b>
+ * once, reaped at JVM exit), the real Flyway migrations (V1–V12) applied, and the <b>real</b>
  * {@link ScenarioReplayOrchestrator} driven through a {@link TransactionTemplate} so its
  * {@code @Transactional} 5-statement critical section runs in one transaction (ADR-0528) against real
  * Postgres row locking — no Spring context, no mocks of the DB.
@@ -45,7 +45,7 @@ abstract class CpPostgresIT {
     @BeforeEach
     void cleanTables() {
         jdbc.execute("TRUNCATE replay_idempotency, outbox, scenario_replay_state, scenarios, "
-                + "rule_sets, tenants CASCADE");
+                + "rule_sets, tenants, run_projection CASCADE");
     }
 
     /** Seeds tenant → rule_set(version) → scenario; the scenarios INSERT trigger seeds replay_state=0. */
