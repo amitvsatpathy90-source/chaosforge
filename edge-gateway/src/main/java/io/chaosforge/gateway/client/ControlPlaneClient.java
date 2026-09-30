@@ -50,7 +50,7 @@ public class ControlPlaneClient {
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
 
     // MCP tool calls do real work — longer than a CRUD round-trip. Bounds ordinary tool calls only:
-    // draft_scenario on CPU Ollama exceeds it in the lab (disclosed limitation, not a bug).
+    // draft_scenario on CPU Ollama exceeds it in the lab (known limitation, not a bug).
     // Kept conservative to fail slow upstream work rather than hold a gateway request open.
     private static final Duration MCP_TIMEOUT = Duration.ofSeconds(15);
 
