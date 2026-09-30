@@ -31,8 +31,8 @@ import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Auth matrix for draft_scenario: chaosforge.operate required, chaosforge.read alone denied.
- * TenantTargetValidator is mocked to a no-op — this IT is scoped to auth, not SSRF policy (which
- * does a real DNS lookup and belongs to target-validation-rules.md's own test suite, not here).
+ * TenantTargetValidator is mocked to a no-op — this IT is scoped to auth, not SSRF policy. The
+ * validator delegates to TargetUrlGuard (DNS lookup for non-literal hosts).
  */
 class DraftScenarioMcpToolIsolationIT extends AbstractCpIntegrationTest {
 
