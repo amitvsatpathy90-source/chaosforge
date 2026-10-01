@@ -48,6 +48,7 @@ chaosforge:
     mcp:
       jwt:
         audience: ${MCP_JWT_AUDIENCE:chaosforge-mcp}
+      operate-rate-limit-per-token: ${MCP_OPERATE_RATE_LIMIT_PER_TOKEN:2}
   control-plane:
     base-url: ${CONTROL_PLANE_URL:http://localhost:8081}
 

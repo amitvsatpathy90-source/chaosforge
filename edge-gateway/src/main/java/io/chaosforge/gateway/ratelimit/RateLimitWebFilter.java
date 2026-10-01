@@ -5,16 +5,25 @@ import io.chaosforge.gateway.cache.TenantPolicyCache;
 import io.chaosforge.gateway.security.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
@@ -40,6 +49,8 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private static final long WINDOW_MS = 60_000L;
     private static final String METRIC = "chaosforge.gateway.rate_limit";
 
+    private final int operateTokenRateLimit;
+
     private final ReactiveStringRedisTemplate redis;
     private final RedisScript<Long> rateLimitScript;
     private final TenantPolicyCache policyCache;
@@ -47,14 +58,20 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private final Counter rateLimited;
     private final Counter failOpen;
 
-    public RateLimitWebFilter(ReactiveStringRedisTemplate redis, RedisScript<Long> rateLimitScript,
-                              TenantPolicyCache policyCache, MeterRegistry meterRegistry) {
+    public RateLimitWebFilter(
+            ReactiveStringRedisTemplate redis,
+            RedisScript<Long> rateLimitScript,
+            TenantPolicyCache policyCache,
+            MeterRegistry meterRegistry,
+            @Value("${chaosforge.security.mcp.operate-rate-limit-per-token}")
+            int operateTokenRateLimit) {
         this.redis = redis;
         this.rateLimitScript = rateLimitScript;
         this.policyCache = policyCache;
         this.allowed = meterRegistry.counter(METRIC, "outcome", "allowed");
         this.rateLimited = meterRegistry.counter(METRIC, "outcome", "rate_limited");
         this.failOpen = meterRegistry.counter(METRIC, "outcome", "fail_open");
+        this.operateTokenRateLimit = operateTokenRateLimit;
     }
 
     @Override
@@ -69,9 +86,21 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                 return chain.filter(exchange);   // unauthenticated path (actuator) — not rate limited
             }
             UUID tenantId = ctx.get(TenantContext.KEY);
-            return policyCache.get(tenantId)
-                    .flatMap(policy -> enforce(tenantId, policy, exchange, chain))
-                    .onErrorResume(e -> failOpenAllow(tenantId, e, exchange, chain));
+            return ReactiveSecurityContextHolder.getContext()
+                    .map(context -> context.getAuthentication())
+                    .filter(authentication -> isMcpOperateRequest(exchange, authentication))
+                    .flatMap(authentication -> enforceOperateTokenLimit(
+                            authentication, exchange, tenantId))
+                    .defaultIfEmpty(true)
+                    .flatMap(tokenAllowed -> {
+                        if (!tokenAllowed) {
+                            return Mono.empty();
+                        }
+
+                        return policyCache.get(tenantId)
+                                .flatMap(policy -> enforce(tenantId, policy, exchange, chain))
+                                .onErrorResume(e -> failOpenAllow(tenantId, e, exchange, chain));
+                    });
         });
     }
 
@@ -114,5 +143,66 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private static String last4(UUID id) {
         String s = id.toString();
         return s.substring(s.length() - 4);
+    }
+
+    private static boolean isMcpOperateRequest(
+            ServerWebExchange exchange,
+            Authentication authentication) {
+
+        String path = exchange.getRequest().getPath().pathWithinApplication().value();
+        if (!"/mcp".equals(path)) {
+            return false;
+        }
+
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        "SCOPE_chaosforge.operate".equals(authority.getAuthority()));
+    }
+
+    private Mono<Boolean> enforceOperateTokenLimit(
+            Authentication authentication,
+            ServerWebExchange exchange,
+            UUID tenantId) {
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication)) {
+            return Mono.just(true);
+        }
+
+        String fingerprint = sha256(jwtAuthentication.getToken().getTokenValue());
+        String rateKey = "{mcp-token:" + fingerprint + "}:rate";
+        List<String> keys = List.of(rateKey, rateKey + ":seq");
+
+        return redis.execute(
+                        rateLimitScript,
+                        keys,
+                        Long.toString(WINDOW_MS),
+                        Integer.toString(operateTokenRateLimit))
+                .next()
+                .defaultIfEmpty(0L)
+                .flatMap(remaining -> {
+                    if (remaining < 0) {
+                        rateLimited.increment();
+                        return reject(exchange).thenReturn(false);
+                    }
+                    return Mono.just(true);
+                })
+                .onErrorResume(e -> {
+                    failOpen.increment();
+                    log.warn(
+                            "rate-limit fail-open ({}) — operate token limit bypassed for tenant …{}",
+                            e.getClass().getSimpleName(),
+                            last4(tenantId));
+                    return Mono.just(true);
+                });
+    }
+
+    private static String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(
+                    digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }
