@@ -48,7 +48,9 @@ chaosforge:
     mcp:
       jwt:
         audience: ${MCP_JWT_AUDIENCE:chaosforge-mcp}
-      operate-rate-limit-per-token: ${MCP_OPERATE_RATE_LIMIT_PER_TOKEN:2}
+      # Lab default (MCP 2025-11-25 baseline); unmeasured, see ADR-0543.
+      # 10 req/min/token rate limit: 8 tools + initialize + notifications/initialized.
+      operate-rate-limit-per-token: ${MCP_OPERATE_RATE_LIMIT_PER_TOKEN:10}
   control-plane:
     base-url: ${CONTROL_PLANE_URL:http://localhost:8081}
 

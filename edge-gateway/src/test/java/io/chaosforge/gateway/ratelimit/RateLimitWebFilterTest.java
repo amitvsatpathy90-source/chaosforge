@@ -23,6 +23,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -33,8 +34,6 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ServerWebExchange;
@@ -241,24 +240,96 @@ class RateLimitWebFilterTest {
         assertThat(counter("fail_open")).isZero();
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void operateRedisOutage_bothLimitersFailOpen_countsFailOpenTwice() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.error(new RuntimeException("redis down")));
+
+        ServerWebExchange exchange = exchange("/mcp");
+        StepVerifier.create(withTenantAndOperateToken(filter.filter(exchange, chain)))
+                .verifyComplete();
+
+        verify(chain, times(1)).filter(any());
+        verify(redis, times(2)).execute(any(RedisScript.class), anyList(), any(Object[].class));
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
+        assertThat(counter("fail_open")).isEqualTo(2.0);   // token + tenant
+        assertThat(counter("allowed")).isZero();
+        assertThat(counter("rate_limited")).isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void differentOperateTokens_useIndependentBuckets_andKeyNeverContainsRawToken() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.just(42L));
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+
+        for (String token : List.of("token-a", "token-b", "token-a")) {
+            StepVerifier.create(withTenantAndOperateToken(
+                    filter.filter(exchange("/mcp"), chain), token)).verifyComplete();
+        }
+
+        verify(redis, times(6)).execute(any(RedisScript.class), keys.capture(), any(Object[].class));
+        List<List<String>> k = keys.getAllValues();   // per request: token call, then tenant call
+        assertThat(k.getFirst().getFirst()).startsWith("{mcp-token:").endsWith("}:rate")
+                .doesNotContain("token-a");
+        assertThat(k.getFirst().getFirst()).isNotEqualTo(k.get(2).getFirst());   // a vs b
+        assertThat(k.getFirst()).isEqualTo(k.get(4));                    // a vs a
+        assertThat(k.get(1).getFirst()).isEqualTo("{tenant:" + TENANT_ID + "}:rate");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void v1RequestWithOperateScope_skipsTokenLimiter() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.just(42L));
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+
+        StepVerifier.create(withTenantAndOperateToken(
+                filter.filter(exchange("/v1/scenarios"), chain))).verifyComplete();
+
+        verify(redis, times(1)).execute(any(RedisScript.class), keys.capture(), any(Object[].class));
+        assertThat(keys.getValue().getFirst()).startsWith("{tenant:");
+        assertThat(counter("allowed")).isEqualTo(1.0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mcpPathWithMatrixParam_stillHitsTokenLimiter() {
+        // Red on the old string-equality match. Path params must not bypass.
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.just(-1L));
+
+        ServerWebExchange exchange = exchange("/mcp;x=1");
+        StepVerifier.create(withTenantAndOperateToken(filter.filter(exchange, chain)))
+                .verifyComplete();
+
+        verify(chain, never()).filter(any());
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     private static Mono<Void> withTenant(Mono<Void> mono) {
         return mono.contextWrite(ctx -> ctx.put(TenantContext.KEY, TENANT_ID));
     }
 
-    private static Mono<Void> withTenantAndOperateToken(Mono<Void> mono) {
-        Jwt jwt = Jwt.withTokenValue("test-bearer-token")
+    private static Mono<Void> withTenantAndOperateToken(Mono<Void> mono, String tokenValue) {
+        Jwt jwt = Jwt.withTokenValue(tokenValue)
                 .header("alg", "RS256")
                 .claim("sub", "agent-1")
                 .claim("scope", "chaosforge.operate")
                 .build();
 
         Authentication authentication = new JwtAuthenticationToken(
-                jwt,
-                List.of(new SimpleGrantedAuthority("SCOPE_chaosforge.operate")));
+                jwt, List.of(new SimpleGrantedAuthority("SCOPE_chaosforge.operate")));
 
         return mono
                 .contextWrite(ctx -> ctx.put(TenantContext.KEY, TENANT_ID))
                 .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication));
+    }
+
+    private static Mono<Void> withTenantAndOperateToken(Mono<Void> mono) {
+        return withTenantAndOperateToken(mono, "test-bearer-token");
     }
 
     private static ServerWebExchange exchange() {
@@ -267,7 +338,7 @@ class RateLimitWebFilterTest {
 
     private static ServerWebExchange exchange(String path) {
         return MockServerWebExchange.from(
-                MockServerHttpRequest.get(path).build());
+                MockServerHttpRequest.post(path).build());
     }
 
     private double counter(String outcome) {

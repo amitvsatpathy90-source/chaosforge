@@ -135,9 +135,8 @@ echo "$TENANT_RESPONSE"
 TENANT_ID=$(echo "$TENANT_RESPONSE" | grep -o '"tenantId":"[^"]*"' | cut -d'"' -f4)
 echo "TENANT_ID=$TENANT_ID"
 
-# 3. Mint tenant-scoped JWT & write directly to .env
+# 3. Mint tenant-scoped JWT
 export TENANT_JWT=$(docker/jwks/mint-jwt.sh --tenant "$TENANT_ID")
-sed -i '' "s|^TENANT_JWT=.*|TENANT_JWT=$TENANT_JWT|" .env 2>/dev/null || sed -i "s|^TENANT_JWT=.*|TENANT_JWT=$TENANT_JWT|" .env
 
 # 4. Create rule-set — real step, never "{}"
 RS_RESPONSE=$(curl -s -X POST "${CONTROL_PLANE_URL}/v1/rule-sets" \

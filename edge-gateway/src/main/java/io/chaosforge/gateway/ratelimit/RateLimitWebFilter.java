@@ -28,6 +28,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 /**
@@ -50,6 +52,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private static final String METRIC = "chaosforge.gateway.rate_limit";
 
     private final int operateTokenRateLimit;
+    private static final PathPattern MCP_PATH = PathPatternParser.defaultInstance.parse("/mcp");
 
     private final ReactiveStringRedisTemplate redis;
     private final RedisScript<Long> rateLimitScript;
@@ -149,8 +152,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             ServerWebExchange exchange,
             Authentication authentication) {
 
-        String path = exchange.getRequest().getPath().pathWithinApplication().value();
-        if (!"/mcp".equals(path)) {
+        if (!MCP_PATH.matches(exchange.getRequest().getPath().pathWithinApplication())) {
             return false;
         }
 
@@ -168,6 +170,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             return Mono.just(true);
         }
 
+        // Per-bearer bucket: do not collapse distinct credentials into one tenant:sub bucket.
         String fingerprint = sha256(jwtAuthentication.getToken().getTokenValue());
         String rateKey = "{mcp-token:" + fingerprint + "}:rate";
         List<String> keys = List.of(rateKey, rateKey + ":seq");
