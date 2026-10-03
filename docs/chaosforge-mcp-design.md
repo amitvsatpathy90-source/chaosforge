@@ -26,7 +26,7 @@ resolution and service access for no isolation gain, so the Control Plane hosts 
 
 | Service | MCP responsibility |
 |---|---|
-| **Edge Gateway** | Authenticate (`aud=chaosforge-mcp`), tenant + rate-limit gate, resilience wrapper, RFC 9728 discovery. Never parses the MCP payload. |
+| **Edge Gateway** | Authenticate (`aud=chaosforge-mcp`), tenant + per-operate-token rate-limit gate, resilience wrapper, RFC 9728 discovery. Never parses the MCP payload. |
 | **Control Plane** | The entire MCP server: protocol, tool registry, tool execution, tenant-scoped logic, per-tool authorization. |
 | **Execution Service** | None. It only produces the `results.v1` events behind `get_run_status`. |
 

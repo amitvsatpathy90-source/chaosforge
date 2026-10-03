@@ -199,7 +199,7 @@
 			}
 		},
 		{
-			"name": "7. MCP: List Tools",
+			"name": "7. MCP List Tools",
 			"request": {
 				"method": "POST",
 				"header": [
@@ -219,7 +219,7 @@
 			}
 		},
 		{
-			"name": "8. MCP: Start Scenario Replay",
+			"name": "8. MCP Start Scenario Replay",
 			"request": {
 				"method": "POST",
 				"header": [
@@ -239,7 +239,7 @@
 			}
 		},
 		{
-			"name": "9. MCP: Get Run Status",
+			"name": "9. MCP Get Run Status",
 			"request": {
 				"method": "POST",
 				"header": [
