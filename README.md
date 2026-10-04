@@ -31,7 +31,7 @@ and proves it.
 
 ```
 Client ──JWT──▶ Edge Gateway  (WebFlux, :8080)
-                  · Redis Lua sliding-window rate limit — true global, fail-open
+                  · Redis Lua sliding-window rate limit — true global, fail-open (operate-token limit: per-pod fallback)
                   · L1 tenant-policy cache (Caffeine)
                   · WebClient → CP, wrapped: bulkhead → CB → timeout(3s)
                   · forwards Authorization + If-Match + Idempotency-Key intact
@@ -191,7 +191,8 @@ curl -i -X GET "${EDGE_GATEWAY_URL}/v1/scenarios/$SCENARIO_ID" \
 ### MCP smoke test (Gateway → Control Plane)
 
 Continues the script above — reuses `TENANT_ID`, `SCENARIO_ID` and the refreshed `ETAG`. MCP has no
-create tool, so the scenario comes from `/v1`. MCP tokens need their own audience and scope, and every
+create tool, so the scenario comes from `/v1`. `get_run_status` is a single check, not a poll: an agent
+that polls it should use a read-only token, which does not consume the operate-token request budget. MCP tokens need their own audience and scope, and every
 request needs both `Accept` types even in stateless mode.
 
 ```bash
@@ -323,8 +324,9 @@ into it.** Specifically:
 
 - **Topology is RF=1.** `acks=all` confirms the sole leader — it is *not* a durability claim.
 - **Redis is single-instance.** Rate limiting is globally consistent via a Lua sliding window, but a
-  Redis failure disables rate limiting entirely — **fail-open by design** (availability over
-  rate-limit correctness during a Redis outage).
+  Redis failure disables per-tenant rate limiting — **fail-open by design** (availability over
+  rate-limit correctness during a Redis outage). The operate-token limit on `/mcp` degrades to a per-pod
+  local window instead (an upper bound: N pods = N × limit; ADR-0543 Amendment 2).
 - **Ollama runs on CPU** and is slow (10–60 s for `llama3.1:8b`). AI latency is not representative of
   anything; the `BeanOutputConverter` schema gate rejects malformed output with no auto re-prompt.
 - **mTLS is implemented but profile-gated off by default** (ADR-0531): dev/tests talk plain HTTP; the

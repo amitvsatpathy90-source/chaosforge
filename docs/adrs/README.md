@@ -45,10 +45,10 @@ here instead of duplicating this table.
 | ADR-0537 | Every silent-failure mode of a resilience mechanism must be observable — partition-trap tripwire, straggler-backlog alert, rate-limit fail-open counters | [`ADR-0537.md`](ADR-0537.md) |
 | ADR-0538 | Steady-state health probes run on an isolated short-timeout client inside a top-guarded loop — prevents a self-inflicted consumer rebalance | [`ADR-0538.md`](ADR-0538.md) |
 | ADR-0539 | Reject out-of-partition-window message mint-times at consumer step 1 (`CommandDecoder.verifyMintClock`) — closes the un-droppable default-partition trap at the source | [`ADR-0539.md`](ADR-0539.md) |
-| ADR-0540 | Gateway rate limiting: Redis Lua sliding window, globally consistent across pods, fail-open — backfill record correcting ADR-0500's stale token-bucket wording | [`ADR-0540.md`](ADR-0540.md) |
+| ADR-0540 | Gateway rate limiting: Redis Lua sliding window, globally consistent across pods, fail-open — backfill record correcting ADR-0500's stale token-bucket wording; amended 2026-10-04: operate-token outage fallback | [`ADR-0540.md`](ADR-0540.md) |
 | ADR-0541 | Deployment security posture: startup asserts the individual controls (mTLS, peer-CN, SSRF guard), not just the profile flag; unconditional hardened/unhardened gauge | [`ADR-0541.md`](ADR-0541.md) |
 | ADR-0542 | Standing DLQ-depth signal: a per-`(topic, partition)` human-triage watermark in CP Postgres (`endOffset − reviewedOffset`) plus an OPERATOR-gated write verb kept off the read-only triage classes — closes arch-audit F5; explicitly re-scopes ADR-0518's "never writes state" invariant to the AI advisory path only | [`ADR-0542.md`](ADR-0542.md) |
-| ADR-0543 | MCP server embedded in the Control Plane behind a protocol-unaware Gateway proxy; dual-audience JWT boundary (`aud=chaosforge-mcp`) on its own `@Order(1)` chain per service; per-tool scope gating; `start_scenario` is the only state-changing tool — `prepare_scenario_run` and mark_dlq_reviewed` excluded by design, amended: per-token operate request ceiling at the Gateway | [`ADR-0543.md`](ADR-0543.md) |
+| ADR-0543 | MCP server embedded in the Control Plane behind a protocol-unaware Gateway proxy; dual-audience JWT boundary (`aud=chaosforge-mcp`) on its own `@Order(1)` chain per service; per-tool scope gating; `start_scenario` is the only state-changing tool — `prepare_scenario_run` and `mark_dlq_reviewed` excluded by design, amended: per-token operate request ceiling at the Gateway, with a per-pod fallback during a Redis outage | [`ADR-0543.md`](ADR-0543.md) |
 
 ---
 
