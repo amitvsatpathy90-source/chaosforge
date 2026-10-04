@@ -26,6 +26,8 @@ This runbook is the procedure; it is *not* the sign-off. The sign-off is the [at
 - Before declaring the platform production-ready (the C31 gate).
 - After any change to the replay critical section, the outbox/inbox relays, the DLQ taxonomy, the
   partitioning, or the executor stop-controls.
+- After any change to the Gateway MCP proxy (`gateway-mcp` breaker) or the rate-limit layer (limiter
+  Redis boundary, operate-token fallback).
 - On a recurring cadence (quarterly) once in production, as a regression exercise.
 
 **Duration:** ~2–3 hours. **Run in staging only** — never against production or shared infra.
@@ -58,6 +60,9 @@ lost while the lead is busy injecting a fault.
   `POST /v1/scenarios/{id}:run` for a pool of scenarios). Throughput need not be high — it must be
   *continuous* so the SLOs and relays have signal.
 - A **synthetic target** with a flippable `/health` endpoint (for the steady-state experiment).
+- **MCP tokens** for E11/E12: `$MCP_READ_JWT` and `$MCP_OPERATE_JWT`
+  (`docker/jwks/mint-jwt.sh --tenant <id> --aud chaosforge-mcp --scope chaosforge.read|chaosforge.operate`).
+  `/mcp` calls need `Accept: application/json, text/event-stream` (README §MCP smoke test).
 
 > Companion runbooks (do not duplicate — follow the links when an alert fires):
 > [scenario-completion-rate](scenario-completion-rate.md) · [stuck-scenario](stuck-scenario.md) ·
@@ -254,6 +259,36 @@ zero manual repair** → record PASS/FAIL. Wait for the steady state to fully re
 - **No-repair assertion:** the record reached a terminal **triage** state on its own; recovering it later
   is a deliberate operator decision, not data repair. ✅/❌
 
+### E11 — MCP boundary: Control Plane unavailable behind `/mcp`
+
+- **Breaks:** the Control Plane behind the Gateway's `/mcp` proxy.
+- **Inject:** with a steady loop of MCP read calls (`$MCP_READ_JWT`, `tools/list` or `get_scenario`)
+  and some `/v1` traffic, `docker pause chaosforge-control-plane` for ~60 s, then unpause.
+- **Expect:** MCP calls fail within their timeout and then fast once the `gateway-mcp` breaker opens
+  (no request hangs beyond the 15 s `gateway-mcp` timeout); after unpause the breaker half-opens and MCP
+  calls succeed again without a Gateway restart.
+- **Verify:** breaker state for `gateway-mcp` on the Gateway's Prometheus endpoint goes open then closed
+  (confirm the series name in your build); the tool call after recovery returns a normal result.
+- **Not covered:** the documented `draft_scenario` timeout interaction (slow drafts counting toward the
+  `gateway-mcp` breaker) is a known limitation, not exercised here.
+- **No-repair assertion:** no state was written during the fault, so there is nothing to repair. ✅/❌
+
+### E12 — Redis outage: operate-token limiter falls back locally
+
+- **Breaks:** the Redis behind the Gateway's rate limiters.
+- **Inject:** `docker stop chaosforge-redis` for ~60 s, then `docker start` it; repeat with
+  `docker pause chaosforge-redis` (hang) for ~60 s, then `docker unpause`.
+- **Expect:** while Redis is down, an operate token gets 429 + `Retry-After` once its local per-pod
+  limit (`MCP_OPERATE_RATE_LIMIT_PER_TOKEN`) is exceeded in the window; a read token and `/v1` still pass
+  (tenant limiter fails open); in the hang case each limiter call errors within
+  `RATE_LIMIT_REDIS_TIMEOUT_MS` instead of stalling; the Gateway stays healthy; after Redis returns the
+  `gateway-ratelimit-redis` breaker closes and normal Redis-backed limiting resumes.
+- **Verify:** `chaosforge_gateway_rate_limit_total` shows `local_fallback{limiter="token"}` and
+  `fail_open{limiter="tenant"}` rising during the outage, then only `allowed` / `rate_limited` after
+  recovery. `RateLimitFailingOpen` is `for: 5m`, so it fires only if the outage is held that long; at
+  60 s check the counters instead.
+- **No-repair assertion:** nothing to repair; counters return to normal outcomes on their own. ✅/❌
+
 ---
 
 ## 8. Experiment log
@@ -271,6 +306,8 @@ zero manual repair** → record PASS/FAIL. Wait for the steady state to fully re
 | E8 | Operator kill switch | | | | | |
 | E9 | Partition-drop purge | | | | | |
 | E10 | DLQ retry exhaustion | | | | | |
+| E11 | MCP boundary: Control Plane unavailable | | | | | |
+| E12 | Redis outage: operate-token local fallback | | | | | |
 
 ---
 
@@ -279,7 +316,7 @@ zero manual repair** → record PASS/FAIL. Wait for the steady state to fully re
 Complete this **after** the stack has returned to steady state and all alerts have cleared. Re-run the
 §6 reconciliation queries and compare to the baseline snapshot.
 
-- [ ] Every experiment E1–E10 is **PASS**.
+- [ ] Every experiment E1–E12 is **PASS**.
 - [ ] **Zero manual data-repair writes** were performed (the scribe's "Manual writes?" column is all 0).
 - [ ] No row is stuck `IN_PROGRESS` past the sweep threshold; none required hand-editing.
 - [ ] CP and exec outbox have **no** `PENDING` older than the relay would tolerate, and `DEAD` is only
@@ -334,4 +371,4 @@ Key metrics on `/actuator/prometheus` (and the Grafana SLI dashboard): `outbox.p
 `chaosforge_run_swept_incomplete_total`, `chaosforge_dlq_routed_total`, `chaosforge_dlq_retry_total`,
 `inbox_duplicates_suppressed_total`, `chaosforge.executor.kill_switch.engaged`,
 `chaosforge.steady_state.breach_total`, `chaosforge.partition.dropped_total`,
-`kafka_consumer_fetch_manager_records_lag_max`.
+`kafka_consumer_fetch_manager_records_lag_max`, `chaosforge_gateway_rate_limit_total` (by `outcome`, `limiter`).
