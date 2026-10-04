@@ -49,7 +49,7 @@ import reactor.test.StepVerifier;
  * Docker-free coverage for the rate-limit filter's control flow (arch-audit H3/M3 follow-up — this
  * filter previously had zero tests). The Lua sliding-window arithmetic itself is not re-verified here
  * (that needs a real Redis); what's under test is the Java decision logic the fail-open instrumentation
- * depends on: allow / reject / fail-open are mutually exclusive, each increments exactly the counter the
+ * depends on: allow / reject / fail-open / local-fallback are mutually exclusive, each increments exactly the counter the
  * {@code TenantPolicyFeedDown}/{@code RateLimitFailingOpen} alerts (ADR-0537) read, and a fail-open event
  * actually WARNs (the specific claim this filter's Javadoc makes).
  */
