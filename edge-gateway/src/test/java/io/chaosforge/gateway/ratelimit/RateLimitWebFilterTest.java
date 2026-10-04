@@ -170,7 +170,7 @@ class RateLimitWebFilterTest {
     @SuppressWarnings("unchecked")
     void operateTokenOverLimit_rejectsBeforeTenantLimiter() {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
-                .thenReturn(Flux.just(-1L));   // token bucket breached
+                .thenReturn(Flux.just(-1L));   // token limit breached
 
         ServerWebExchange exchange = exchange("/mcp");
 
@@ -278,7 +278,7 @@ class RateLimitWebFilterTest {
         }
 
         verify(redis, times(6)).execute(any(RedisScript.class), keys.capture(), any(Object[].class));
-        List<List<String>> k = keys.getAllValues();   // per request: token call, then tenant call
+        List<List<String>> k = keys.getAllValues();   // each request: token-limit call, then tenant-limit call
         assertThat(k.getFirst().getFirst()).startsWith("{mcp-token:").endsWith("}:rate")
                 .doesNotContain("token-a");
         assertThat(k.getFirst().getFirst()).isNotEqualTo(k.get(2).getFirst());   // a vs b
@@ -304,7 +304,7 @@ class RateLimitWebFilterTest {
     @Test
     @SuppressWarnings("unchecked")
     void mcpPathWithMatrixParam_stillHitsTokenLimiter() {
-        // Red on the old string-equality match. Path params must not bypass.
+        // Matrix params must not bypass the /mcp limiter match.
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.just(-1L));
 

@@ -49,7 +49,7 @@ class McpOperateRateLimitIT {
                 .build();
         when(mcpJwtDecoder.decode(anyString())).thenReturn(Mono.just(jwt));
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
-                .thenReturn(Flux.just(-1L));   // every bucket breached
+                .thenReturn(Flux.just(-1L));   // every limit breached
     }
 
     private int post(String path) {

@@ -39,9 +39,11 @@ import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 /**
- * True-global per-tenant rate limiting via an atomic Redis Lua sliding window (single shared key,
- * not per-pod). Hash-tagged {@code {tenant:<id>}:rate} for Redis Cluster co-location. Lettuce
- * reactive only — no blocking calls.
+ * Two rate-limit layers on one atomic Redis Lua sliding window (Lettuce reactive, no blocking calls):
+ * a per-tenant limit on every request (true-global single shared key, not per-pod; hash-tagged
+ * {@code {tenant:<id>}:rate} for Redis Cluster co-location), and an extra per-bearer-token limit on
+ * operate-scoped {@code /mcp} requests (ADR-0543). The token limit runs first; its rejection does not
+ * consume the tenant limit.
  *
  * <p><b>Tenant limiter fails open by design</b> (ADR-0540): if Redis or the policy lookup errors, the
  * request is allowed through — availability is favoured over rate-limit correctness during a Redis
@@ -75,7 +77,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private final MeterRegistry meterRegistry;
     private final CircuitBreaker redisCb;
     private final Duration redisTimeout;
-    // Fixed window from first hit; eviction resets that token's bucket.
+    // Fixed window from first hit; eviction resets that token's count.
     private final Cache<String, AtomicInteger> localTokenWindow = Caffeine.newBuilder()
             .maximumSize(10_000)
             .expireAfterWrite(Duration.ofMillis(WINDOW_MS))
@@ -112,6 +114,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                 return chain.filter(exchange);   // unauthenticated path (actuator) — not rate limited
             }
             UUID tenantId = ctx.get(TenantContext.KEY);
+            // Operate-scoped /mcp: token limit first; a rejection skips the tenant limiter.
             return ReactiveSecurityContextHolder.getContext()
                     .map(context -> context.getAuthentication())
                     .filter(authentication -> isMcpOperateRequest(exchange, authentication))
@@ -187,6 +190,7 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             ServerWebExchange exchange,
             Authentication authentication) {
 
+        // PathPattern ignores matrix params; exact /mcp only, /mcp/ not matched (ADR-0543).
         if (!MCP_PATH.matches(exchange.getRequest().getPath().pathWithinApplication())) {
             return false;
         }
