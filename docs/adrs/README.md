@@ -56,6 +56,7 @@ here instead of duplicating this table.
 
 | Date | Change |
 |---|---|
+| 2026-10-04 | ADR-0543 amended (Redis-outage local fallback for the operate-token limit; polling guidance); ADR-0540 amended (per-pod limiter used only as that fallback); ADR-0537 note. |
 | 2026-10-03 | ADR-0543 amended (Gateway per-credential request ceiling for operate-scoped `/mcp`). |
 | 2026-09-27 | ADR-0543 added (MCP server); ADR-0521 amended (its "doesn't use MCP" impact cell is stale). |
 | 2026-09-03 | Updated `File` column entries across the index from static file names to explicit Markdown links (`[ADR-XXX.md](ADR-XXX.md)`) for GitHub views. |

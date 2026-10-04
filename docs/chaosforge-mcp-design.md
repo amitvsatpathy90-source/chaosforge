@@ -114,3 +114,4 @@ latest `ETag`/`get_scenario`, refreshed after any prior replay.
 - `scopes_supported` advertises only `chaosforge.read`; `operate` and `dlq` are deliberately undisclosed.
 - A record `run_projection` gives up on stays stale until that scenario is replayed again.
 - The promtool cases for `RunProjectionFailureRateHigh` are a manual gate, like the other alert tests.
+- The operate-token rate limit falls back to a local per-pod window during a Redis outage (upper bound, N pods = N × limit). Read-scope tokens are not covered by the token limiter, so agents should poll `get_run_status` with a read-only token. See ADR-0543 Amendment 2.
