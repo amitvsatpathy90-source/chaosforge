@@ -16,10 +16,13 @@ import ch.qos.logback.core.read.ListAppender;
 import io.chaosforge.gateway.cache.TenantPolicy;
 import io.chaosforge.gateway.cache.TenantPolicyCache;
 import io.chaosforge.gateway.security.TenantContext;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,15 +58,17 @@ class RateLimitWebFilterTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     private static final TenantPolicy POLICY = new TenantPolicy(TENANT_ID, 100);
     private static final int OPERATE_TOKEN_RATE_LIMIT = 2;
+    private static final long REDIS_TIMEOUT_MS = 100L;
 
     @SuppressWarnings("unchecked")
     private final RedisScript<Long> script = mock(RedisScript.class);
     private final ReactiveStringRedisTemplate redis = mock(ReactiveStringRedisTemplate.class);
     private final TenantPolicyCache policyCache = mock(TenantPolicyCache.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final CircuitBreakerRegistry cbRegistry = CircuitBreakerRegistry.ofDefaults();
     private final RateLimitWebFilter filter = new RateLimitWebFilter(
-            redis, script, policyCache, registry,
-            OPERATE_TOKEN_RATE_LIMIT);
+            redis, script, policyCache, registry, cbRegistry,
+            REDIS_TIMEOUT_MS, OPERATE_TOKEN_RATE_LIMIT);
 
     private final WebFilterChain chain = mock(WebFilterChain.class);
     private ListAppender<ILoggingEvent> logAppender;
@@ -188,7 +193,7 @@ class RateLimitWebFilterTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void operateTokenRedisError_failsOpenForToken_andStillRunsTenantLimiter() {
+    void operateTokenRedisError_usesLocalLimit_andStillRunsTenantLimiter() {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(
                         Flux.error(new RuntimeException("token limiter unavailable")),
@@ -204,7 +209,8 @@ class RateLimitWebFilterTest {
         verify(redis, times(2)).execute(any(RedisScript.class), anyList(), any(Object[].class));
 
         assertThat(exchange.getResponse().getStatusCode()).isNull();
-        assertThat(counter("fail_open")).isEqualTo(1.0);
+        assertThat(counter("local_fallback", "token")).isEqualTo(1.0);
+        assertThat(counter("fail_open")).isZero();
         assertThat(counter("allowed")).isEqualTo(1.0);
         assertThat(counter("rate_limited")).isZero();
     }
@@ -242,7 +248,7 @@ class RateLimitWebFilterTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void operateRedisOutage_bothLimitersFailOpen_countsFailOpenTwice() {
+    void operateRedisOutage_tokenFallsBackLocally_tenantFailsOpen() {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.error(new RuntimeException("redis down")));
 
@@ -253,7 +259,8 @@ class RateLimitWebFilterTest {
         verify(chain, times(1)).filter(any());
         verify(redis, times(2)).execute(any(RedisScript.class), anyList(), any(Object[].class));
         assertThat(exchange.getResponse().getStatusCode()).isNull();
-        assertThat(counter("fail_open")).isEqualTo(2.0);   // token + tenant
+        assertThat(counter("local_fallback", "token")).isEqualTo(1.0);
+        assertThat(counter("fail_open", "tenant")).isEqualTo(1.0);
         assertThat(counter("allowed")).isZero();
         assertThat(counter("rate_limited")).isZero();
     }
@@ -309,6 +316,56 @@ class RateLimitWebFilterTest {
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void operateRedisOutage_localLimitEnforced_429AfterLimit() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.error(new RuntimeException("redis down")));
+
+        for (int i = 0; i < OPERATE_TOKEN_RATE_LIMIT; i++) {
+            StepVerifier.create(withTenantAndOperateToken(filter.filter(exchange("/mcp"), chain)))
+                    .verifyComplete();
+        }
+        ServerWebExchange over = exchange("/mcp");
+        StepVerifier.create(withTenantAndOperateToken(filter.filter(over, chain))).verifyComplete();
+
+        verify(chain, times(OPERATE_TOKEN_RATE_LIMIT)).filter(any());
+        assertThat(over.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(over.getResponse().getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("60");
+        assertThat(counter("rate_limited", "token")).isEqualTo(1.0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void hungRedis_timesOut_andFallsBackLocally() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.never());
+
+        StepVerifier.create(withTenantAndOperateToken(filter.filter(exchange("/mcp"), chain)))
+                .verifyComplete();
+
+        verify(chain, times(1)).filter(any());
+        assertThat(counter("local_fallback", "token")).isEqualTo(1.0);
+        assertThat(counter("fail_open", "tenant")).isEqualTo(1.0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void openBreaker_skipsRedis_andFallsBackLocally() {
+        AtomicBoolean subscribed = new AtomicBoolean();
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.just(42L).doOnSubscribe(s -> subscribed.set(true)));
+        cbRegistry.circuitBreaker("gateway-ratelimit-redis").transitionToOpenState();
+
+        StepVerifier.create(withTenantAndOperateToken(filter.filter(exchange("/mcp"), chain)))
+                .verifyComplete();
+
+        assertThat(subscribed).as("open breaker must not reach Redis").isFalse();
+        verify(chain, times(1)).filter(any());
+        assertThat(counter("local_fallback", "token")).isEqualTo(1.0);
+        assertThat(counter("fail_open", "tenant")).isEqualTo(1.0);
+    }
+
     private static Mono<Void> withTenant(Mono<Void> mono) {
         return mono.contextWrite(ctx -> ctx.put(TenantContext.KEY, TENANT_ID));
     }
@@ -342,6 +399,13 @@ class RateLimitWebFilterTest {
     }
 
     private double counter(String outcome) {
-        return registry.counter("chaosforge.gateway.rate_limit", "outcome", outcome).count();
+        return registry.find("chaosforge.gateway.rate_limit").tag("outcome", outcome)
+                .counters().stream().mapToDouble(Counter::count).sum();   // across limiters
+    }
+
+    private double counter(String outcome, String limiter) {
+        return registry.find("chaosforge.gateway.rate_limit")
+                .tag("outcome", outcome).tag("limiter", limiter)
+                .counters().stream().mapToDouble(Counter::count).sum();
     }
 }
