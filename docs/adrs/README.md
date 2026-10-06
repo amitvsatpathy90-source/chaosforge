@@ -20,7 +20,7 @@ here instead of duplicating this table.
 | ADR-0512 | Lab benchmarks must disclose the full rig (10 required fields, e.g. CPU/RAM/JVM/Kafka config/warmup/window) or the benchmark is removed and re-run | [`ADR-0512.md`](ADR-0512.md) |
 | ADR-0513 | OTel-on-Execution-Service experiment outcome — pre-structured decision frame for the Week 11 game day | [`ADR-0513.md`](ADR-0513.md) |
 | ADR-0514 | OTel Collector topology + tail-sampling config, triggered only if ADR-0513 = ADOPT; Option B (Collector) chosen as default | [`ADR-0514.md`](ADR-0514.md) |
-| ADR-0515 | Cross-cutting chaos-experiment outcomes — pre-structured decision frame for the Week 12 game day (6 hypotheses) | [`ADR-0515.md`](ADR-0516.md) |
+| ADR-0515 | Cross-cutting chaos-experiment outcomes — pre-structured decision frame for the Week 12 game day (6 hypotheses) | [`ADR-0515.md`](ADR-0515.md) |
 | ADR-0516 | RPE-specific deviations from ChaosForge canonical patterns — 6 justified divergences (Redis-as-source-of-truth, UUIDv5 alert dedup, reactive Lettuce in the hot path, Kafka EOS via `transactional.id`, `synchronous_commit=off`, agentic vs one-shot AI) plus build tool and no-replay-engine; a cross-project comparison ADR, numbered in CF but scoped to RPE | [`ADR-0516.md`](ADR-0516.md) |
 | ADR-0517 | Spring AI 1.1.x on Boot 3.x — **SUPERSEDED same-day** by ADR-0521 following the Boot 4 baseline shift | [`ADR-0517.md`](ADR-0517.md) |
 | ADR-0518 | AI determinism boundary: LLM called only at authoring time and advisory DLQ triage, never on the replay path; structural isolation — amended by ADR-0542 (non-AI operator write verb) | [`ADR-0518.md`](ADR-0518.md) |
@@ -48,7 +48,7 @@ here instead of duplicating this table.
 | ADR-0540 | Gateway rate limiting: Redis Lua sliding window, globally consistent across pods, fail-open — backfill record correcting ADR-0500's stale token-bucket wording | [`ADR-0540.md`](ADR-0540.md) |
 | ADR-0541 | Deployment security posture: startup asserts the individual controls (mTLS, peer-CN, SSRF guard), not just the profile flag; unconditional hardened/unhardened gauge | [`ADR-0541.md`](ADR-0541.md) |
 | ADR-0542 | Standing DLQ-depth signal: a per-`(topic, partition)` human-triage watermark in CP Postgres (`endOffset − reviewedOffset`) plus an OPERATOR-gated write verb kept off the read-only triage classes — closes arch-audit F5; explicitly re-scopes ADR-0518's "never writes state" invariant to the AI advisory path only | [`ADR-0542.md`](ADR-0542.md) |
-| ADR-0543 | MCP server embedded in the Control Plane behind a protocol-unaware Gateway proxy; dual-audience JWT boundary (`aud=chaosforge-mcp`) on its own `@Order(1)` chain per service; per-tool scope gating; `start_scenario` is the only state-changing tool — `prepare_scenario_run` and mark_dlq_reviewed` excluded by design, amended: per-token operate request ceiling at the Gateway | [`ADR-0543.md`](ADR-0543.md) |
+| ADR-0543 | MCP server embedded in the Control Plane behind a protocol-unaware Gateway proxy; dual-audience JWT boundary (`aud=chaosforge-mcp`) on its own `@Order(1)` chain per service; per-tool scope gating; `start_scenario` is the only state-changing tool — `prepare_scenario_run` and `mark_dlq_reviewed` excluded by design, amended: per-token operate request ceiling at the Gateway | [`ADR-0543.md`](ADR-0543.md) |
 
 ---
 
