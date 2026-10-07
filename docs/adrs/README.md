@@ -18,9 +18,9 @@ here instead of duplicating this table.
 | ADR-0510 | Cross-tenant access returns 404, never 403 — no resource-existence leak | [`ADR-0510.md`](ADR-0510.md) |
 | ADR-0511 | Free-tier-only deploy, $0/month cost ceiling; only the Edge Gateway is deployed publicly | [`ADR-0511.md`](ADR-0511.md) |
 | ADR-0512 | Lab benchmarks must disclose the full rig (10 required fields, e.g. CPU/RAM/JVM/Kafka config/warmup/window) or the benchmark is removed and re-run | [`ADR-0512.md`](ADR-0512.md) |
-| ADR-0513 | OTel-on-Execution-Service experiment outcome — pre-structured decision frame for the Week 11 game day | [`ADR-0513.md`](ADR-0513.md) |
-| ADR-0514 | OTel Collector topology + tail-sampling config, triggered only if ADR-0513 = ADOPT; Option B (Collector) chosen as default | [`ADR-0514.md`](ADR-0514.md) |
-| ADR-0515 | Cross-cutting chaos-experiment outcomes — pre-structured decision frame for the Week 12 game day (6 hypotheses) | [`ADR-0515.md`](ADR-0515.md) |
+| ADR-0513 | OTel-on-Execution-Service experiment outcome — pre-structured decision frame — DEFERRED, not yet executed | [`ADR-0513.md`](ADR-0513.md) |
+| ADR-0514 | OTel Collector topology + tail-sampling config, triggered only if ADR-0513 = ADOPT (DEFERRED); Option B (Collector) chosen as default | [`ADR-0514.md`](ADR-0514.md) |
+| ADR-0515 | Cross-cutting chaos-experiment outcomes — pre-structured decision frame (6 hypotheses) — DEFERRED, not yet executed | [`ADR-0515.md`](ADR-0515.md) |
 | ADR-0516 | RPE-specific deviations from ChaosForge canonical patterns — 6 justified divergences (Redis-as-source-of-truth, UUIDv5 alert dedup, reactive Lettuce in the hot path, Kafka EOS via `transactional.id`, `synchronous_commit=off`, agentic vs one-shot AI) plus build tool and no-replay-engine; a cross-project comparison ADR, numbered in CF but scoped to RPE | [`ADR-0516.md`](ADR-0516.md) |
 | ADR-0517 | Spring AI 1.1.x on Boot 3.x — **SUPERSEDED same-day** by ADR-0521 following the Boot 4 baseline shift | [`ADR-0517.md`](ADR-0517.md) |
 | ADR-0518 | AI determinism boundary: LLM called only at authoring time and advisory DLQ triage, never on the replay path; structural isolation — amended by ADR-0542 (non-AI operator write verb) | [`ADR-0518.md`](ADR-0518.md) |
@@ -56,6 +56,7 @@ here instead of duplicating this table.
 
 | Date | Change |
 |---|---|
+| 2026-10-07 | ADR-0513/0514/0515 marked DEFERRED (not yet executed); no content change. |
 | 2026-10-03 | ADR-0543 amended (Gateway per-credential request ceiling for operate-scoped `/mcp`). |
 | 2026-09-27 | ADR-0543 added (MCP server); ADR-0521 amended (its "doesn't use MCP" impact cell is stale). |
 | 2026-09-03 | Updated `File` column entries across the index from static file names to explicit Markdown links (`[ADR-XXX.md](ADR-XXX.md)`) for GitHub views. |
