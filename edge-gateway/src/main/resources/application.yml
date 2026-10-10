@@ -111,7 +111,8 @@ resilience4j:
         record-exceptions:
           - io.chaosforge.gateway.client.UpstreamUnavailableException
           - java.util.concurrent.TimeoutException
-      # Limiter Redis boundary. No health indicator: Redis loss must not take the gateway out of readiness.
+      # Limiter Redis boundary, shared by tenant and token limiters. No breaker health indicator;
+      # aggregate /actuator/health still includes the auto-configured redis indicator.
       gateway-ratelimit-redis:
         sliding-window-size: 20
         minimum-number-of-calls: 5
