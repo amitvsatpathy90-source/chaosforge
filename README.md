@@ -345,9 +345,9 @@ The value here is the *argument and the proof*, not a throughput figure.
 
 ## Where the decisions live
 
-- **Architecture-decision records:** For the complete, single-source-of-truth list, see the [ADR Index](docs/adrs/README.md). The replay engine is ADR-0522 (CAS)
-  narrowed by **ADR-0528** (ownership-first, idempotency, outbox hardening); Avro binary is ADR-0525;
-  `FULL_TRANSITIVE` compatibility is ADR-0527; tenant-identity provenance is ADR-0524.
+- **Architecture-decision records:** For the complete, single-source-of-truth list, see the [ADR Index](docs/adrs/README.md).
+  The replay engine is ADR-0522 (CAS) narrowed by **ADR-0528** (ownership-first, idempotency, outbox hardening);
+  Avro binary is ADR-0525; `FULL_TRANSITIVE` compatibility is ADR-0527; tenant-identity provenance is ADR-0524.
 - **MCP:** the placement and dual-audience auth boundary are ADR-0543; topology, tool inventory and
   failure semantics are in [`docs/chaosforge-mcp-design.md`](docs/chaosforge-mcp-design.md).
 - **Enforced constraints:** the per-service rules (no `.block()`, no `Mono`/`Flux` in CP/Exec, no
