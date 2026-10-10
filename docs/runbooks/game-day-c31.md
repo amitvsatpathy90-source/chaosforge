@@ -263,10 +263,13 @@ zero manual repair** → record PASS/FAIL. Wait for the steady state to fully re
 
 - **Breaks:** the Control Plane behind the Gateway's `/mcp` proxy.
 - **Inject:** with a steady loop of MCP read calls (`$MCP_READ_JWT`, `tools/list` or `get_scenario`)
-  and some `/v1` traffic, `docker pause chaosforge-control-plane` for ~60 s, then unpause.
+  and some `/v1` traffic, take the Control Plane down for ~60 s, then bring it back. The lab compose
+  file has no Control Plane service: if it runs under `bootRun`, stop the process and start it again;
+  if it runs as a container, `docker pause <name>` then `docker unpause <name>` (find the name with
+  `docker ps`).
 - **Expect:** MCP calls fail within their timeout and then fast once the `gateway-mcp` breaker opens
-  (no request hangs beyond the 15 s `gateway-mcp` timeout); after unpause the breaker half-opens and MCP
-  calls succeed again without a Gateway restart.
+  (no request hangs beyond the 15 s `gateway-mcp` timeout); once the Control Plane is back the breaker
+  half-opens and MCP calls succeed again without a Gateway restart.
 - **Verify:** breaker state for `gateway-mcp` on the Gateway's Prometheus endpoint goes open then closed
   (confirm the series name in your build); the tool call after recovery returns a normal result.
 - **Not covered:** the documented `draft_scenario` timeout interaction (slow drafts counting toward the
