@@ -209,8 +209,12 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             return Mono.just(true);
         }
 
-        // Per-bearer bucket: do not collapse distinct credentials into one tenant:sub bucket.
-        String fingerprint = sha256(jwtAuthentication.getToken().getTokenValue());
+        // Equivalent signature encodings must share one rate-limit bucket.
+        String raw = jwtAuthentication.getToken().getTokenValue();
+        int dot = raw.lastIndexOf('.');
+        String signingInput = dot > 0 ? raw.substring(0, dot) : raw;
+        String fingerprint = sha256(signingInput);
+
         String rateKey = "{mcp-token:" + fingerprint + "}:rate";
         List<String> keys = List.of(rateKey, rateKey + ":seq");
 
