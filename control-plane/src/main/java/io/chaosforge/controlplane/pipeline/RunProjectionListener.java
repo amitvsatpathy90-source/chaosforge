@@ -10,7 +10,16 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
-/** Projects terminal ScenarioRunResult events into run_projection for get_run_status. */
+/**
+ * Projects terminal {@code ScenarioRunResult} events from the results topic into
+ * {@code run_projection}, the read cache behind the {@code get_run_status} MCP tool.
+ *
+ * <p>The projection is rebuildable, so failures are counted and skipped, never DLQ-routed.
+ * A record that fails to decode is logged, counted and acked, since retry cannot help.
+ * A failed upsert is rethrown so the container error handler retries it (2 retries, 2 s apart),
+ * then counts it as exhausted and moves on. The upsert is idempotent on
+ * {@code (scenario_id, replay_version)}, so redelivery is safe. Acks are manual.
+ */
 @Component
 public class RunProjectionListener {
 
@@ -27,6 +36,7 @@ public class RunProjectionListener {
         this.metrics = metrics;
     }
 
+    // Manual ack: only after decode-skip or a successful upsert (AckMode.MANUAL).
     @KafkaListener(topics = "${chaosforge.kafka.results-topic}",
             containerFactory = "runProjectionListenerContainerFactory")
     public void onResult(ConsumerRecord<String, byte[]> record, Acknowledgment ack) {

@@ -23,6 +23,16 @@ public class RunStatusMcpTools {
 
     private final RunStatusService runStatusService;
 
+    /**
+     * MCP wrapper over {@link RunStatusService} for the {@code get_run_status} tool (ADR-0543).
+     * Read-only and tenant-scoped; a cross-tenant or unknown scenario id gives the same 404 as
+     * {@code get_scenario} (ADR-0510).
+     *
+     * <p>Status comes from {@code run_projection}, a rebuildable read cache fed from terminal
+     * {@code ScenarioRunResult} events. No terminal row for the scenario's current replay version
+     * reports {@code IN_PROGRESS}, which also covers a scenario that has never run. A record the
+     * projection gave up on stays stale until that scenario is replayed again.
+     */
     public RunStatusMcpTools(RunStatusService runStatusService) {
         this.runStatusService = runStatusService;
     }
