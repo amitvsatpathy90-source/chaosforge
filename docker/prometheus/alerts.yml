@@ -142,7 +142,7 @@ groups:
       # retried, and a persist failure only counts here once the container's retry budget is exhausted.
       - alert: RunProjectionFailureRateHigh
         expr: sum(increase(chaosforge_run_projection_decode_failures_total{job="control-plane"}[5m])
-                + increase(chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}[5m])) > 0
+          + increase(chaosforge_run_projection_persist_failures_exhausted_total{job="control-plane"}[5m])) > 0
         for: 1m
         labels:
           severity: ticket
@@ -279,8 +279,8 @@ groups:
           runbook: docs/runbooks/gateway-rate-limit-and-policy.md
 
       # Rate limiting failing open (arch-audit H3): Redis/policy errors let requests through unthrottled.
-      # Fail-open is by design during a Redis outage (architecture specifications), but a sustained signal means the limiter
-      # is globally disabled — this makes that condition visible instead of silent.
+      # Fail-open is by design during a Redis outage (architecture specifications), but a sustained signal means the
+      # tenant limiter is globally disabled — this makes that condition visible instead of silent.
       - alert: RateLimitFailingOpen
         expr: sum(rate(chaosforge_gateway_rate_limit_total{job="edge-gateway", outcome="fail_open"}[5m])) > 0
         for: 5m
@@ -291,4 +291,20 @@ groups:
           description: >-
             The edge gateway is allowing requests unthrottled because the rate-limit backend (Redis or
             the policy lookup) errored. Per-tenant limits are not being enforced while this fires.
+          runbook: docs/runbooks/gateway-rate-limit-and-policy.md
+
+      # Operate-token limiter on its per-pod fallback (ADR-0543 Amendment 2): still enforced, but only as an
+      # upper bound (N pods = N x limit). Fires on Redis errors, timeouts or the gateway-ratelimit-redis breaker open.
+      - alert: RateLimitTokenLimiterDegraded
+        expr: sum(rate(chaosforge_gateway_rate_limit_total{job="edge-gateway", outcome="local_fallback", limiter="token"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Operate-token rate limit is running on its per-pod local fallback"
+          description: >-
+            The operate-token limiter's Redis call failed, timed out, or its circuit breaker is open, so
+            the limit is enforced per pod instead of globally (N pods allow up to N x the configured limit).
+            The limit is still enforced; the tenant limiter fails open under the same condition
+            (RateLimitFailingOpen). Check Redis health and the gateway-ratelimit-redis breaker.
           runbook: docs/runbooks/gateway-rate-limit-and-policy.md

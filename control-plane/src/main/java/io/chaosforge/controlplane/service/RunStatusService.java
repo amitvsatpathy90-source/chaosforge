@@ -8,6 +8,15 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
+/**
+ * Latest-replay run status for one scenario, read from the {@code run_projection} cache.
+ * Used by the {@code get_run_status} MCP tool (ADR-0543).
+ *
+ * <p>The lookup is keyed on the scenario's current replay version and the caller's tenant.
+ * A terminal row gives {@code TERMINAL} plus outcome and finish time. No row gives
+ * {@code IN_PROGRESS}, because the projection holds terminal results only. Tenant-scoped
+ * existence is checked first so that an unknown scenario never reads as {@code IN_PROGRESS}.
+ */
 @Service
 public class RunStatusService {
 

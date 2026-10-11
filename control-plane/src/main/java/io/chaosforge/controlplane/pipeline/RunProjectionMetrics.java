@@ -4,6 +4,16 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
+/**
+ * Failure counters for the {@code run_projection} consumer of the results topic
+ * ({@link RunProjectionListener}). The projection is a rebuildable read cache, so failures are
+ * counted and skipped, never DLQ-routed.
+ *
+ * <p>{@code decode_failures} and {@code persist_failures_exhausted} are permanent losses and feed
+ * the {@code RunProjectionFailureRateHigh} alert. {@code persist_failures} counts transient
+ * attempts that the container error handler retries, so it is not alerted. No tenant label
+ * (cardinality rule).
+ */
 @Component
 public class RunProjectionMetrics {
 
