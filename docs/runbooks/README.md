@@ -24,6 +24,7 @@ Operational response procedures for the alert rules in
 | `RunProjectionFailureRateHigh` | `run_projection` permanently dropped a results.v1 record (decode failure or retry-exhausted persist failure) | [dlq-and-outbox.md](dlq-and-outbox.md) |
 | `TenantPolicyFeedDown` | gateway tenant-policy loads mostly falling back to default | [gateway-rate-limit-and-policy.md](gateway-rate-limit-and-policy.md) |
 | `RateLimitFailingOpen` | gateway rate limiting failing open (Redis/policy error) | [gateway-rate-limit-and-policy.md](gateway-rate-limit-and-policy.md) |
+| `RateLimitTokenLimiterDegraded` | operate-token rate limit on its per-pod local fallback (Redis error, timeout or breaker open) | [gateway-rate-limit-and-policy.md](gateway-rate-limit-and-policy.md) |
 
 ## Operator controls & safety
 

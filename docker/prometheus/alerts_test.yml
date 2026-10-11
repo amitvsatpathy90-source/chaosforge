@@ -1,6 +1,7 @@
 # promtool unit tests for SecurityPostureNotHardened (arch-audit F2), DlqTriageBacklog (ADR-0542)
 # DlqDepthPollFailing (the frozen-gauge meta-alert mirrored from RPE's Bundle-1 fix) and
-# RunProjectionFailureRateHigh (the run_projection permanent-loss signal, ADR-0543).
+# RunProjectionFailureRateHigh (the run_projection permanent-loss signal, ADR-0543), and the gateway
+# limiter alerts RateLimitTokenLimiterDegraded / RateLimitFailingOpen (ADR-0543 Amendment 2, ADR-0540).
 #
 # Why this file exists: the rule is INERT in the lab by construction (the lab stamps env=lab and is
 # unhardened by design), so a running lab Prometheus can never demonstrate that it fires. Without these
@@ -265,3 +266,53 @@ tests:
       - eval_time: 15m
         alertname: RunProjectionFailureRateHigh
         exp_alerts: []
+
+
+  # 14. RateLimitTokenLimiterDegraded: operate-token limiter sustained on its local fallback (for: 5m) — fires.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_gateway_rate_limit_total{job="edge-gateway",outcome="local_fallback",limiter="token"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RateLimitTokenLimiterDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "Operate-token rate limit is running on its per-pod local fallback"
+              description: >-
+                The operate-token limiter's Redis call failed, timed out, or its circuit breaker is open, so
+                the limit is enforced per pod instead of globally (N pods allow up to N x the configured limit).
+                The limit is still enforced; the tenant limiter fails open under the same condition
+                (RateLimitFailingOpen). Check Redis health and the gateway-ratelimit-redis breaker.
+              runbook: docs/runbooks/gateway-rate-limit-and-policy.md
+
+  # 16. Negative control: ordinary token 429s (outcome=rate_limited) must NOT page as a degraded limiter.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_gateway_rate_limit_total{job="edge-gateway",outcome="rate_limited",limiter="token"}'
+        values: "0+5x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RateLimitTokenLimiterDegraded
+        exp_alerts: []
+
+  # 17. RateLimitFailingOpen: the tenant limiter failing open during a Redis outage (for: 5m) — fires.
+  #     This is the signal that still surfaces an outage even though the token limiter now degrades quietly.
+  - interval: 1m
+    input_series:
+      - series: 'chaosforge_gateway_rate_limit_total{job="edge-gateway",outcome="fail_open",limiter="tenant"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RateLimitFailingOpen
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "Gateway rate limiting is failing open (backend unavailable)"
+              description: >-
+                The edge gateway is allowing requests unthrottled because the rate-limit backend (Redis or
+                the policy lookup) errored. Per-tenant limits are not being enforced while this fires.
+              runbook: docs/runbooks/gateway-rate-limit-and-policy.md
