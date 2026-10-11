@@ -366,6 +366,45 @@ class RateLimitWebFilterTest {
         assertThat(counter("fail_open", "tenant")).isEqualTo(1.0);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void operateTokenKey_ignoresSignature_butTracksHeaderAndPayload() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(Flux.just(42L));
+
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+
+        // Model compact JWTs: header.payload.signature.
+        // Vary one segment at a time to pin the signing-input key contract.
+        for (String token : List.of(
+                "hdr.pay.sigA",
+                "hdr.pay.sigB",
+                "hdr.other.sigA",
+                "otherHdr.pay.sigA")) {
+            StepVerifier.create(withTenantAndOperateToken(
+                            filter.filter(exchange("/mcp"), chain), token))
+                    .verifyComplete();
+        }
+
+        // Each request invokes the token limiter first, then the tenant limiter.
+        verify(redis, times(8)).execute(
+                any(RedisScript.class), keys.capture(), any(Object[].class));
+
+        List<List<String>> captured = keys.getAllValues();
+
+        // Signature is excluded: identical header.payload shares one bucket.
+        assertThat(captured.get(0).getFirst())
+                .isEqualTo(captured.get(2).getFirst());
+
+        // Payload is part of the signing input: changing it changes the bucket.
+        assertThat(captured.get(0).getFirst())
+                .isNotEqualTo(captured.get(4).getFirst());
+
+        // Header is part of the signing input: changing it changes the bucket.
+        assertThat(captured.get(0).getFirst())
+                .isNotEqualTo(captured.get(6).getFirst());
+    }
+
     private static Mono<Void> withTenant(Mono<Void> mono) {
         return mono.contextWrite(ctx -> ctx.put(TenantContext.KEY, TENANT_ID));
     }
