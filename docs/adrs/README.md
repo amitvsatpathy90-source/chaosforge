@@ -56,6 +56,7 @@ here instead of duplicating this table.
 
 | Date | Change |
 |---|---|
+| 2026-10-11 | ADR-0543 Amendment 2 clarified the operate-token bucket key: hash the JWT signing input (`header.payload`), excluding the signature. |
 | 2026-10-07 | ADR-0513/0514/0515 marked DEFERRED (not yet executed); no content change. |
 | 2026-10-04 | ADR-0543 amended (Redis-outage local fallback for the operate-token limit; polling guidance); ADR-0540 amended (per-pod limiter used only as that fallback); ADR-0537 note. |
 | 2026-10-03 | ADR-0543 amended (Gateway per-credential request ceiling for operate-scoped `/mcp`). |
