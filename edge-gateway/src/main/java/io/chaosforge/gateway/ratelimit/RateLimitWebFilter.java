@@ -41,9 +41,10 @@ import reactor.core.publisher.Mono;
 /**
  * Two rate-limit layers on one atomic Redis Lua sliding window (Lettuce reactive, no blocking calls):
  * a per-tenant limit on every request (true-global single shared key, not per-pod; hash-tagged
- * {@code {tenant:<id>}:rate} for Redis Cluster co-location), and an extra per-bearer-token limit on
- * operate-scoped {@code /mcp} requests (ADR-0543). The token limit runs first; its rejection does not
- * consume the tenant limit.
+ * {@code {tenant:<id>}:rate} for Redis Cluster co-location), and an extra per-credential limit on
+ * operate-scoped {@code /mcp} requests (ADR-0543), keyed on the JWT signing input ({@code header.payload},
+ * signature excluded: non-canonical signature encodings still verify). The token limit runs first; its
+ * rejection does not consume the tenant limit.
  *
  * <p><b>Tenant limiter fails open by design</b> (ADR-0540): if Redis or the policy lookup errors, the
  * request is allowed through — availability is favoured over rate-limit correctness during a Redis
@@ -209,10 +210,10 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             return Mono.just(true);
         }
 
-        // Equivalent signature encodings must share one rate-limit bucket.
+        // Signature encoding is malleable; key on header.payload only.
         String raw = jwtAuthentication.getToken().getTokenValue();
         int dot = raw.lastIndexOf('.');
-        String signingInput = dot > 0 ? raw.substring(0, dot) : raw;
+        String signingInput = dot > 0 ? raw.substring(0, dot) : raw;   // no dot: test tokens only
         String fingerprint = sha256(signingInput);
 
         String rateKey = "{mcp-token:" + fingerprint + "}:rate";
