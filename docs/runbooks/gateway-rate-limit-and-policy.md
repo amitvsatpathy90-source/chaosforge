@@ -77,7 +77,7 @@ Structured WARN logs on the failing path:
 
 1. **Check Redis first.** Confirm the rate-limit Redis instance is reachable from the
    gateway (single-instance in the lab; no cluster). If Redis is healthy, inspect the
-   `rate-limit fail-open` warning and exception class to identify the error that propagated.
+   `rate-limit Redis unavailable` warning and exception class to identify propagated error.
    Check `policy_load{outcome="fallback"}` and `TenantPolicyFeedDown` separately for
    Control Plane policy-fetch failures.
 
