@@ -9,7 +9,7 @@
 
 [versions]
 java = "21"
-springBoot = "4.1.0"
+springBoot = "4.1.1"
 springDependencyManagement = "1.1.7"
 springAi = "2.0.0"
 resilience4j = "2.4.0"   # 2.4.0 = first release with the spring-boot4 integration module
