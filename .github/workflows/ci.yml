@@ -92,7 +92,10 @@ jobs:
 
   push-images:
     # Images only from main (or a deliberate manual run) — a PR build must never publish.
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # AWS_PUSH_ENABLED: set true only while foundation (OIDC provider + role) is applied.
+    if: >-
+      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+      && vars.AWS_PUSH_ENABLED == 'true'
     needs: check
     runs-on: ubuntu-latest
     permissions:
