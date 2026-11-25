@@ -5,12 +5,21 @@ artifact**. The point is not the feature set — it is that every hard distribut
 *argued* (in an ADR), *enforced* (in code and CI), and *demonstrated* (by a test that runs against
 real infrastructure).
 
-> **Lab benchmarks only — never production claims.** See [Lab Benchmark Disclosure](#lab-benchmark-disclosure).
+> **Lab/reference implementation - not a production deployment.**
 
 Java 21 · Spring Boot 4.1.x · Gradle (Kotlin DSL) · Postgres · Redis · Kafka (Redpanda) · Apicurio ·
 Resilience4j · Micrometer/Prometheus/Grafana · Spring AI (Ollama) · MCP.
 
 ---
+
+## What this is
+
+A multi-tenant chaos-engineering control plane. Three services (Gateway,
+Control Plane, Execution Service) demonstrate CAS replay-version fencing with
+durable fencing tokens, client idempotency keys, an Avro Kafka command/result
+flow with inbox deduplication, and a stateless Spring AI MCP server whose only
+execution-triggering tool (`start_scenario`) reuses the same replay
+orchestrator. Redlock was rejected with reasons (ADR-0502 → 0522 → 0528).
 
 ## The five claims
 
@@ -335,7 +344,7 @@ into it.** Specifically:
   add a public CA cert before any real deployment.
 - **MCP tokens are minted directly by `docker/jwks/mint-jwt.sh`.** The lab has no authorization server
   (the JWKS stub is static), so RFC 8707 resource-indicator-at-issuance does not apply here.
-- **Free-tier footprint:** only the Edge Gateway is deployable free; CP + Execution are Compose-local.
+- **AWS deployment:** see [ChaosForge-Infra](https://github.com/amitvsatpathy90-source/chaosforge-infra). Only the Edge Gateway is publicly reachable; Control Plane and Execution Service have no public ingress.
 - **Cache staleness** is bounded by the affected L2 TTL when the invalidation bus is down (≤ 1 h
   tenants, ≤ 5 m scenarios); `rule_sets` are exempt by construction (append-only).
 
